@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.0.1] - 2026-05-02
+
+### Fixed
+
+- Fix(ui): improve operation mode indicator icon and hint text
+
 ## [v1.15.13] - 2026-05-02
 
 ### Changed
