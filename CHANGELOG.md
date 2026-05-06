@@ -3,6 +3,17 @@
 All notable changes to Gen Code are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.17.3] - 2026-05-06
+
+### Added
+- Tavily search provider
+
+### Changed
+- Rename BigModel provider display to Z.ai (GLM series)
+
+### Fixed
+- Restore Exa search provider after MCP endpoint changes
+
 ## [v1.17.2] - 2026-05-06
 
 ### Added
