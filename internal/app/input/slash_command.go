@@ -626,7 +626,7 @@ func (c *CommandController) handleTokenLimitCommand(_ context.Context, args stri
 
 func (c *CommandController) handleCompactCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	if c.deps.LLMProvider == nil {
-		return "No provider connected. Use /provider to connect.", nil, nil
+		return "No provider connected. Use /model to connect.", nil, nil
 	}
 	if len(c.deps.Conversation.Messages) == 0 {
 		return "No active LLM session. Send a message first to initialize the client.", nil, nil
