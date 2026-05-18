@@ -145,7 +145,7 @@ how Claude-Code-compatible hook configs are interpreted.
 ## See Also
 
 - Code: `internal/hook/`
-- Reference: [`reference/permission-model.md`](../reference/permission-model.md)
+- Concepts: [`concepts/permission-model.md`](../concepts/permission-model.md)
 - Concepts: [`concepts/extension-model.md`](../concepts/extension-model.md)
 - Related: [`packages/tool.md`](tool.md) (tool permission gate), [`packages/setting.md`](setting.md) (where hooks are loaded from)
 - Layer: `feature` (see [`reference/dependency-rules.md`](../reference/dependency-rules.md))

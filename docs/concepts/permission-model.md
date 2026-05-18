@@ -4,8 +4,8 @@ Every tool call passes through one gate: `setting.HasPermissionToUseTool`.
 This page documents the inputs, the decision pipeline, and how the
 foreground TUI, subagents, and plan-mode differ.
 
-For the small "lookup table" version (rule syntax, mode names, default
-behavior), see [`reference/permission-model.md`](../reference/permission-model.md).
+For the Claude-Code-compatible rule syntax see
+[`reference/claude-permission-compat.md`](../reference/claude-permission-compat.md).
 
 ## Vocabulary
 
@@ -88,6 +88,5 @@ mutation payload.
 
 ## See Also
 
-- Reference table: [`reference/permission-model.md`](../reference/permission-model.md)
 - Packages: [`setting`](../packages/setting.md), [`tool`](../packages/tool.md), [`agent`](../packages/agent.md), [`subagent`](../packages/subagent.md), [`hook`](../packages/hook.md)
 - Compatibility note for Claude Code rule files: [`reference/claude-permission-compat.md`](../reference/claude-permission-compat.md)

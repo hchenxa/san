@@ -6,6 +6,11 @@
 - Keep durable explanations in `docs/`.
 - Prefer a single obvious index for each documentation area.
 - Document package ownership and dependency direction before large refactors.
+- Per-package details belong in `docs/packages/<pkg>.md`. Promote a topic
+  to `docs/concepts/` only when three or more packages collaborate
+  around the idea and the collaboration must be understood before any
+  single package's docs make sense. Single-package internals stay in
+  that package's page.
 
 ## Code Structure
 

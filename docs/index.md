@@ -26,15 +26,14 @@ explanations here.
 ### Look up a fact
 
 - `reference/slash-commands.md` — all slash commands.
-- `reference/configuration.md` — config file fields.
+- `reference/configuration.md` — config files and field reference.
 - `reference/dependency-rules.md` — layer / import rules.
 - `reference/package-map.md` — package-to-layer assignment.
-- `reference/permission-model.md` — permission rule syntax and modes.
+- `reference/claude-permission-compat.md` — Claude-Code-compatible
+  permission rule syntax.
 - `reference/token-limits.md`, `reference/cost-tracking.md`,
   `reference/cli-startup.md`, `reference/loop.md`,
-  `reference/file-naming.md`, `reference/config-files.md`,
-  `reference/llm-providers.md`, `reference/minmax-provider.md`,
-  `reference/claude-permission-compat.md`.
+  `reference/file-naming.md`, `reference/minmax-provider.md`.
 
 ### Do something
 

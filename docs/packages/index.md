@@ -22,18 +22,15 @@ each package works internally and what contract it exposes upward.
 | [`command`](command.md) | feature | Slash command registry (builtin + dynamic + custom + plugin-scoped). |
 | [`core`](core.md) | core | Agent primitive, `System`, `Tools`, `LLM`, `Message` — the stable contracts every feature shares. |
 | [`cron`](cron.md) | feature | Cron expressions and one-shot scheduling for `/loop` and `/schedule`. |
-| [`filecache`](filecache.md) | infrastructure | LRU touch tracking + context-restore block builder. |
 | [`hook`](hook.md) | feature | Pre/post hook engine with command / HTTP / LLM / function executors. |
 | [`identity`](identity.md) | feature | User-defined persona markdown files; concrete registry, no god service. |
 | [`inspector`](inspector.md) | feature | Local web UI for transcript replay; SSE live-tail. |
 | [`llm`](llm.md) | feature | Provider registry, model store, `Client` factory implementing `core.LLM`. |
-| [`log`](log.md) | infrastructure | zap-backed structured logger + `DEV_DIR` per-turn artifact dump. |
-| [`markdown`](markdown.md) | infrastructure | YAML frontmatter parser shared by skill/subagent/identity/command files. |
 | [`mcp`](mcp.md) | feature | MCP client + transport + `Caller` for external tool servers. |
 | [`plugin`](plugin.md) | feature | Plugin loader / installer / marketplace; pushes contributions to other feature packages. |
+| [`infrastructure`](infrastructure.md) | infrastructure | `log` / `secret` / `filecache` / `markdown` — stateless helpers documented together. |
 | [`reminder`](reminder.md) | feature | `<system-reminder>` queue with provider re-emission; reference shape for what packages should look like post-refactor. |
 | [`search`](search.md) | feature | Pluggable web search backends behind a small `Provider` interface. |
-| [`secret`](secret.md) | infrastructure | `~/.gen/secrets.json` key/value store for API keys and tokens. |
 | [`session`](session.md) | feature | Transcript persistence, resume, fork, projection. |
 | [`setting`](setting.md) | feature | Settings loader + central permission decision gate. |
 | [`skill`](skill.md) | feature | Skill loader, state store, system-prompt section renderer. |
