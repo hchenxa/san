@@ -70,17 +70,32 @@ tea.KeyMsg('h')                  ── per keystroke
    │
    ▼
 Update                            update.go
-   ├─ case tea.KeyMsg → routeKeypress
-   │     ├─ delegateToActiveModal  (no modal active)
-   │     ├─ overlay overrides       (no overlay active)
-   │     └─ handleTextareaShortcut
-   │           └─ default for KeyRunes → (nil, false)
    │
-   └─ routeToSubModel (no handler claims it)
-   └─ updateTextarea                ← textarea consumes the rune
+   ├─ case tea.KeyMsg → routeKeypress
+   │     │
+   │     ├─ tryActivePopup           — question modal, approval modal,
+   │     │                             or one of the slash-command
+   │     │                             pickers (/model, /tools, ...)
+   │     │                             nothing active for typing 'h'
+   │     │
+   │     ├─ HandleImageSelectKey     — image picker mode (off)
+   │     ├─ HandleSuggestionKey      — prompt-suggestion mode (off)
+   │     ├─ HandleQueueSelectKey     — queue-navigation mode (off)
+   │     │
+   │     └─ handleTextareaShortcut   — Ctrl-shortcuts / Tab / Enter / ...
+   │           └─ no match for KeyRunes('h') → (nil, false)
+   │
+   ├─ routeToSubModel                — no sub-model claims a KeyRunes msg
+   │
+   └─ updateTextarea                  — textarea consumes the rune
    ▼
 View                              view.go      bottom UI shows "h▮"
 ```
+
+The dispatch in `routeKeypress` is a **priority stack**: a popup that is
+shown (e.g. the model picker after `/model`) gets first refusal on every
+key; only if nothing higher up claims the key does it reach the textarea
+shortcuts, and only then the textarea itself.
 
 Five rune-keystrokes later, textarea holds `hello`. User presses **Enter**:
 

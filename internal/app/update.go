@@ -25,14 +25,22 @@ import (
 	"github.com/genai-io/gen-code/internal/log"
 )
 
-type overlaySelector interface {
+// popup is a UI element that pops up over the input area and, while
+// active, consumes keypresses before the textarea sees them. Includes
+// the slash-command pickers (/model, /tools, /skills, ...) but not the
+// question / approval modals — those are checked separately in
+// tryActivePopup before the picker list.
+type popup interface {
 	IsActive() bool
 	HandleKeypress(tea.KeyMsg) tea.Cmd
 	Render() string
 }
 
-func (m *model) overlaySelectors() []overlaySelector {
-	return []overlaySelector{
+// popups lists every slash-command picker that may be active. Order
+// only matters at most one of them is active at a time; the first one
+// reporting IsActive() wins the keypress.
+func (m *model) popups() []popup {
+	return []popup{
 		&m.userInput.Provider.Selector,
 		&m.userInput.Tool,
 		&m.userInput.Skill.Selector,
@@ -110,6 +118,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, m.updateTextarea(msg)
 }
 
+// routeToSubModel hands a non-keyboard tea.Msg to the first sub-model
+// that claims it. Order matters: conv (agent outbox events) goes first
+// because its events are the most frequent; trigger (cron/file watcher)
+// goes last because it primarily produces messages, doesn't consume
+// them. Returns (cmd, true) if any sub-model handled the message.
 func (m *model) routeToSubModel(msg tea.Msg) (tea.Cmd, bool) {
 	if cmd, ok := conv.Update(m, &m.conv, msg); ok {
 		return cmd, true

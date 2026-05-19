@@ -77,7 +77,7 @@ func (m *model) View() string {
 }
 
 func (m *model) renderOverlaySelector() string {
-	for _, s := range m.overlaySelectors() {
+	for _, s := range m.popups() {
 		if s.IsActive() {
 			return s.Render()
 		}
