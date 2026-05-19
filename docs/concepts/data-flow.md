@@ -368,46 +368,64 @@ Update → routeToSubModel                update.go
 
 ### Where the user sees streaming text
 
-The TUI paints in **two regions**:
+The terminal window has two distinct surfaces during a session:
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│ scrollback (above) — native terminal scrollback           │
-│   ▲ written via tea.Println                               │
-│   ▲ committed messages only (Stream.Active == false)      │
-├───────────────────────────────────────────────────────────┤
-│ active content (middle) — repainted on every Update by    │
-│ View() → renderChatSection → conv.RenderActiveContent     │
-│   ▲ shows uncommitted messages, i.e. the assistant        │
-│     message currently growing token-by-token              │
-│   ▲ shows tool-call spinners                              │
-├───────────────────────────────────────────────────────────┤
-│ input strip (bottom) — textarea, queue preview, status    │
-│   ▲ also repainted by View() on every Update              │
-└───────────────────────────────────────────────────────────┘
+   terminal native scrollback                  Bubble Tea repaint zone
+   (text you can scroll up to                  (the bottom N lines
+    review; never repainted —                   redrawn every Update;
+    written line-by-line via                    contents discarded
+    tea.Println)                                between repaints)
 ```
 
-A streaming reply lives in the **active content** zone while
-`Stream.Active == true`. Each OnChunk appends text to the last
-`m.conv.Messages` entry, View() repaints, the user watches it grow.
-When the stream finishes, `CommitMessages` calls `tea.Println` to
-**move** the final rendered message into native scrollback — at that
-point the same content disappears from the active zone (because
-`renderAndCommit` advances `CommittedCount`) and appears in the
-terminal's scrollback above.
+Same window, but written by two different mechanisms. Bubble Tea owns
+the bottom N lines; everything above is regular terminal output it
+emitted with `tea.Println`.
 
-`renderAndCommit(checkReady=true)` is the rule that prevents
-double-rendering: it never commits the last message if it's still
-streaming.
+**While a message is streaming** the in-progress text lives in the
+repaint zone, not the scrollback. Each OnChunk grows the assistant
+message in `m.conv.Messages`; View() rebuilds the repaint zone every
+Update so the user sees it advance token-by-token:
 
-### Two render mechanisms
+```
+   ─── terminal scrollback (frozen) ──────────────────
+     user: write a poem about the sea               ← committed
+   ─── Bubble Tea repaint zone (repainted) ──────────
+     assistant: Whispers of waves on ancient
+                stone, the tides▮                   ← in conv.Messages,
+                                                      Stream.Active=true,
+                                                      NOT yet committed
+     ─────────────────────────────────────────────
+     ❯ (textarea waits, disabled mid-stream)
+```
 
-1. **`tea.Println`** — emits a line to the terminal **above** Bubble Tea's
-   alt-screen. The terminal keeps the line in its native scrollback. Used
-   for committed conversation messages (assistant replies, notices).
-2. **`View()`** — called by Bubble Tea after every Update. Composes the
-   active-content zone + bottom UI strip (textarea, status bar, modal
-   overlays). This is the only thing rerendered on resize.
+**When the stream finishes** (last OnChunk with `Done=true` and no tool
+calls), `CommitMessages` calls `tea.Println` for the completed message.
+That **lifts** the message out of the repaint zone and into the
+scrollback above:
+
+```
+   ─── terminal scrollback (frozen) ──────────────────
+     user: write a poem about the sea
+     assistant: Whispers of waves on ancient
+                stone, the tides retreat and        ← now committed,
+                return, ...                            written once via
+                                                       tea.Println
+   ─── Bubble Tea repaint zone (repainted) ──────────
+     (empty — CommittedCount caught up with len(Messages))
+     ─────────────────────────────────────────────
+     ❯ type your message...
+```
+
+The rule preventing the message from appearing in both places at once
+is in `renderAndCommit(checkReady=true)`: it never commits the last
+message while `Stream.Active == true`. So during streaming the message
+is only in the repaint zone; once the stream finishes, exactly one
+`tea.Println` moves it to scrollback and `CommittedCount` advances so
+the repaint zone no longer redraws it.
+
+Tool-call spinners live in the repaint zone the same way: they appear
+while a tool is running and disappear once the result lands.
 
 ## File pointers
 
