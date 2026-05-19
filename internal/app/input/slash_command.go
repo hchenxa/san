@@ -26,9 +26,9 @@ import (
 	"github.com/genai-io/gen-code/internal/tool"
 )
 
-type commandHandler func(*CommandController, context.Context, string) (string, tea.Cmd, error)
+type slashCommandHandler func(*SlashCommandController, context.Context, string) (string, tea.Cmd, error)
 
-type CommandDeps struct {
+type SlashCommandEnv struct {
 	// UI state: the textarea, conversation render state, tool exec state,
 	// terminal dimensions, current working directory, and the input-token
 	// snapshot for context-percent displays.
@@ -79,40 +79,40 @@ type CommandDeps struct {
 	ForkSession             func() (originalSessionID string, err error)
 }
 
-type CommandController struct {
-	deps CommandDeps
+type SlashCommandController struct {
+	deps SlashCommandEnv
 }
 
-func NewCommandController(deps CommandDeps) CommandController {
-	return CommandController{deps: deps}
+func NewSlashCommandController(deps SlashCommandEnv) SlashCommandController {
+	return SlashCommandController{deps: deps}
 }
 
-func builtinCommandHandlers() map[string]commandHandler {
-	return map[string]commandHandler{
-		"model":          (*CommandController).handleModelCommand,
-		"clear":          (*CommandController).handleClearCommand,
-		"fork":           (*CommandController).handleForkCommand,
-		"resume":         (*CommandController).handleResumeCommand,
-		"help":           (*CommandController).handleHelpCommand,
-		"glob":           (*CommandController).handleGlobCommand,
-		"tools":          (*CommandController).handleToolCommand,
-		"skills":         (*CommandController).handleSkillCommand,
-		"agents":         (*CommandController).handleAgentCommand,
-		"tokenlimit":     (*CommandController).handleTokenLimitCommand,
-		"compact":        (*CommandController).handleCompactCommand,
-		"init":           (*CommandController).handleInitCommand,
-		"memory":         (*CommandController).handleMemoryCommand,
-		"mcp":            (*CommandController).handleMCPCommand,
-		"plugin":         (*CommandController).handlePluginCommand,
-		"reload-plugins": (*CommandController).handleReloadPluginsCommand,
-		"think":          (*CommandController).handleThinkCommand,
-		"loop":           (*CommandController).handleLoopCommand,
-		"search":         (*CommandController).handleSearchCommand,
-		"identity":       (*CommandController).handleIdentityCommand,
+func builtinCommandHandlers() map[string]slashCommandHandler {
+	return map[string]slashCommandHandler{
+		"model":          (*SlashCommandController).handleModelCommand,
+		"clear":          (*SlashCommandController).handleClearCommand,
+		"fork":           (*SlashCommandController).handleForkCommand,
+		"resume":         (*SlashCommandController).handleResumeCommand,
+		"help":           (*SlashCommandController).handleHelpCommand,
+		"glob":           (*SlashCommandController).handleGlobCommand,
+		"tools":          (*SlashCommandController).handleToolCommand,
+		"skills":         (*SlashCommandController).handleSkillCommand,
+		"agents":         (*SlashCommandController).handleAgentCommand,
+		"tokenlimit":     (*SlashCommandController).handleTokenLimitCommand,
+		"compact":        (*SlashCommandController).handleCompactCommand,
+		"init":           (*SlashCommandController).handleInitCommand,
+		"memory":         (*SlashCommandController).handleMemoryCommand,
+		"mcp":            (*SlashCommandController).handleMCPCommand,
+		"plugin":         (*SlashCommandController).handlePluginCommand,
+		"reload-plugins": (*SlashCommandController).handleReloadPluginsCommand,
+		"think":          (*SlashCommandController).handleThinkCommand,
+		"loop":           (*SlashCommandController).handleLoopCommand,
+		"search":         (*SlashCommandController).handleSearchCommand,
+		"identity":       (*SlashCommandController).handleIdentityCommand,
 	}
 }
 
-func (c CommandController) Execute(ctx context.Context, inputText string) (string, tea.Cmd, bool) {
+func (c SlashCommandController) Execute(ctx context.Context, inputText string) (string, tea.Cmd, bool) {
 	cmdName, args, isCmd := command.ParseCommand(inputText)
 	if !isCmd {
 		return "", nil, false
@@ -137,7 +137,7 @@ func (c CommandController) Execute(ctx context.Context, inputText string) (strin
 	return unknownCommandResult(cmdName), nil, true
 }
 
-func (c CommandController) HandleSubmit(inputText string) (tea.Cmd, bool) {
+func (c SlashCommandController) HandleSubmit(inputText string) (tea.Cmd, bool) {
 	preserve := shouldPreserveCommandInConversation(inputText)
 	if preserve {
 		c.deps.Conversation.Append(core.ChatMessage{Role: core.RoleUser, Content: inputText})
@@ -165,7 +165,7 @@ func (c CommandController) HandleSubmit(inputText string) (tea.Cmd, bool) {
 	return tea.Batch(cmds...), true
 }
 
-func (c CommandController) executeBuiltinCommand(ctx context.Context, cmdName, args string) (string, tea.Cmd, bool) {
+func (c SlashCommandController) executeBuiltinCommand(ctx context.Context, cmdName, args string) (string, tea.Cmd, bool) {
 	handler, ok := builtinCommandHandlers()[cmdName]
 	if !ok {
 		return "", nil, false
@@ -177,7 +177,7 @@ func (c CommandController) executeBuiltinCommand(ctx context.Context, cmdName, a
 	return result, followUp, true
 }
 
-func (c CommandController) executeExitCommand(cmdName string) (string, tea.Cmd, bool) {
+func (c SlashCommandController) executeExitCommand(cmdName string) (string, tea.Cmd, bool) {
 	if cmdName != "exit" {
 		return "", nil, false
 	}
@@ -187,7 +187,7 @@ func (c CommandController) executeExitCommand(cmdName string) (string, tea.Cmd, 
 	return "", tea.Quit, true
 }
 
-func (c CommandController) executeSkillSlashCommand(sk *skill.Skill, args string) string {
+func (c SlashCommandController) executeSkillSlashCommand(sk *skill.Skill, args string) string {
 	if c.deps.Skill != nil {
 		c.deps.Input.Skill.SetPending(sk.FullName(), c.deps.Skill.GetSkillInvocationPrompt(sk.FullName()))
 	}
@@ -216,7 +216,7 @@ func ApplySkillInvocation(state *Model, sk *skill.Skill, args string, skillSvc *
 	}
 }
 
-func (c CommandController) executeCustomCommand(pc *command.CustomCommand, args string) string {
+func (c SlashCommandController) executeCustomCommand(pc *command.CustomCommand, args string) string {
 	if instructions := pc.GetInstructions(); instructions != "" {
 		c.deps.Input.Skill.SetPending(pc.FullName(), command.WrapInvocation(pc.FullName(), instructions))
 	}
@@ -235,7 +235,7 @@ func formatSlashInvocation(name, args string) string {
 	return "/" + name + " " + args
 }
 
-func (c *CommandController) handleHelpCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleHelpCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	var sb strings.Builder
 	sb.WriteString("Available Commands:\n\n")
 	builtins := c.deps.Command.BuiltinNames()
@@ -262,7 +262,7 @@ func (c *CommandController) handleHelpCommand(_ context.Context, _ string) (stri
 	return sb.String(), nil, nil
 }
 
-func (c *CommandController) handleClearCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleClearCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	c.deps.StopAgentSession()
 	c.deps.Conversation.Stream.Stop()
 	if c.deps.Tool.Cancel != nil {
@@ -283,11 +283,11 @@ func (c *CommandController) handleClearCommand(_ context.Context, _ string) (str
 	return "", tea.Batch(cmds...), nil
 }
 
-func (c CommandController) HandleClearForTests(ctx context.Context, args string) (string, tea.Cmd, error) {
+func (c SlashCommandController) HandleClearForTests(ctx context.Context, args string) (string, tea.Cmd, error) {
 	return c.handleClearCommand(ctx, args)
 }
 
-func (c *CommandController) handleForkCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleForkCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	if len(c.deps.Conversation.Messages) == 0 {
 		return "Nothing to fork — no messages in current session.", nil, nil
 	}
@@ -306,7 +306,7 @@ func (c *CommandController) handleForkCommand(_ context.Context, _ string) (stri
 	return fmt.Sprintf("Forked conversation. You are now in the fork.\nTo resume the original: gen -r %s", originalID), nil, nil
 }
 
-func (c *CommandController) handleResumeCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleResumeCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	if err := c.deps.Session.EnsureStore(c.deps.Cwd); err != nil {
 		return "", nil, fmt.Errorf("failed to initialize session store: %w", err)
 	}
@@ -316,7 +316,7 @@ func (c *CommandController) handleResumeCommand(_ context.Context, _ string) (st
 	return "", nil, nil
 }
 
-func (c *CommandController) handleSearchCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleSearchCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	if err := c.deps.Input.Search.Enter(c.deps.LLM.Store(), c.deps.Width, c.deps.Height); err != nil {
 		return "", nil, err
 	}
@@ -330,7 +330,7 @@ func (c *CommandController) handleSearchCommand(_ context.Context, _ string) (st
 //
 // Subcommands reuse the same skill-invocation pipeline as user-defined
 // commands — the workflow body lives in internal/command/builtin/.
-func (c *CommandController) handleIdentityCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleIdentityCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
 	sub, rest, _ := strings.Cut(strings.TrimSpace(args), " ")
 	rest = strings.TrimSpace(rest)
 	switch sub {
@@ -354,7 +354,7 @@ func (c *CommandController) handleIdentityCommand(ctx context.Context, args stri
 // injectIdentityWorkflow loads an embedded workflow template, substitutes
 // $ARGUMENTS, and primes the skill invocation pipeline so the next user
 // submit prepends the workflow as hidden instructions.
-func (c *CommandController) injectIdentityWorkflow(sub, args string) {
+func (c *SlashCommandController) injectIdentityWorkflow(sub, args string) {
 	body := command.BuiltinWorkflow("identity-" + sub)
 	if body == "" {
 		return
@@ -365,7 +365,7 @@ func (c *CommandController) injectIdentityWorkflow(sub, args string) {
 	c.deps.Input.Skill.PendingArgs = formatSlashInvocation(name, args)
 }
 
-func (c *CommandController) handleModelCommand(ctx context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleModelCommand(ctx context.Context, _ string) (string, tea.Cmd, error) {
 	cmd, err := c.deps.Input.Provider.Selector.Enter(ctx, c.deps.Width, c.deps.Height)
 	if err != nil {
 		return "", nil, err
@@ -373,12 +373,12 @@ func (c *CommandController) handleModelCommand(ctx context.Context, _ string) (s
 	return "", cmd, nil
 }
 
-func (c *CommandController) handleInitCommand(_ context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleInitCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	result, err := HandleInitCommand(c.deps.Cwd, args)
 	return result, nil, err
 }
 
-func (c *CommandController) handleMemoryCommand(_ context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleMemoryCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	result, editPath, err := HandleMemoryCommand(&c.deps.Input.Memory.Selector, c.deps.Cwd, c.deps.Width, c.deps.Height, args)
 	if err != nil {
 		return "", nil, err
@@ -390,7 +390,7 @@ func (c *CommandController) handleMemoryCommand(_ context.Context, args string) 
 	return result, nil, nil
 }
 
-func (c *CommandController) handleMCPCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleMCPCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
 	result, editInfo, err := HandleMCPCommand(ctx, &c.deps.Input.MCP.Selector, c.deps.Width, c.deps.Height, args)
 	if err != nil {
 		return "", nil, err
@@ -407,12 +407,12 @@ func (c *CommandController) handleMCPCommand(ctx context.Context, args string) (
 	return result, nil, nil
 }
 
-func (c *CommandController) handlePluginCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handlePluginCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
 	result, err := HandlePluginCommand(ctx, &c.deps.Input.Plugin, c.deps.Cwd, c.deps.Width, c.deps.Height, args)
 	return result, nil, err
 }
 
-func (c *CommandController) handleReloadPluginsCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleReloadPluginsCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
 	if strings.TrimSpace(args) != "" {
 		return "Usage: /reload-plugins", nil, nil
 	}
@@ -426,7 +426,7 @@ func (c *CommandController) handleReloadPluginsCommand(ctx context.Context, args
 	return "Reloaded plugins and refreshed plugin-backed skills, agents, MCP servers, and hooks.", nil, nil
 }
 
-func (c *CommandController) handleGlobCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleGlobCommand(ctx context.Context, args string) (string, tea.Cmd, error) {
 	if args == "" {
 		return "Usage: /glob <pattern> [path]", nil, nil
 	}
@@ -440,7 +440,7 @@ func (c *CommandController) handleGlobCommand(ctx context.Context, args string) 
 	return conv.RenderToolResult(result, c.deps.Width), nil, nil
 }
 
-func (c *CommandController) handleToolCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleToolCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	var mcpTools func() []core.ToolSchema
 	if c.deps.MCP != nil {
 		mcpTools = c.deps.MCP.GetToolSchemas
@@ -451,21 +451,21 @@ func (c *CommandController) handleToolCommand(_ context.Context, _ string) (stri
 	return "", nil, nil
 }
 
-func (c *CommandController) handleSkillCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleSkillCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	if err := c.deps.Input.Skill.Selector.EnterSelect(c.deps.Width, c.deps.Height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
 }
 
-func (c *CommandController) handleAgentCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleAgentCommand(_ context.Context, _ string) (string, tea.Cmd, error) {
 	if err := c.deps.Input.Agent.EnterSelect(c.deps.Width, c.deps.Height); err != nil {
 		return "", nil, err
 	}
 	return "", nil, nil
 }
 
-func (c *CommandController) handleThinkCommand(_ context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleThinkCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	model := ""
 	if c.deps.LLM.CurrentModel() != nil {
 		model = c.deps.LLM.CurrentModel().ModelID
@@ -509,7 +509,7 @@ func containsThinkingEffort(efforts []string, effort string) bool {
 	return false
 }
 
-func (c *CommandController) handleLoopCommand(_ context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleLoopCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	args = strings.TrimSpace(args)
 	if args == "" {
 		return loopUsage(), nil, nil
@@ -609,7 +609,7 @@ func loopUsage() string {
 	return "Usage: /loop [interval] <prompt>\n       /loop once <interval> <prompt>\n       /loop once <prompt> in <interval>\n       /loop list\n       /loop delete <job-id>\n       /loop delete all\nExamples: /loop 5m check the deploy, /loop check the deploy every 20m, /loop once 20m check the deploy"
 }
 
-func (c *CommandController) handleTokenLimitCommand(_ context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleTokenLimitCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	result, cmd, err := HandleTokenLimitCommand(TokenLimitDeps{
 		CurrentModel: c.deps.LLM.CurrentModel(),
 		Provider:     c.deps.LLM.Provider(),
@@ -625,7 +625,7 @@ func (c *CommandController) handleTokenLimitCommand(_ context.Context, args stri
 	return result, cmd, err
 }
 
-func (c *CommandController) handleCompactCommand(_ context.Context, args string) (string, tea.Cmd, error) {
+func (c *SlashCommandController) handleCompactCommand(_ context.Context, args string) (string, tea.Cmd, error) {
 	if c.deps.LLM.Provider() == nil {
 		return "No provider connected. Use /model to connect.", nil, nil
 	}

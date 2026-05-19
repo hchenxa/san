@@ -1,5 +1,5 @@
-// Slash-command execution: builds CommandDeps from services + env state,
-// runs commands through input.NewCommandController.
+// Slash-command execution: builds SlashCommandEnv from services + env state,
+// runs commands through input.NewSlashCommandController.
 //
 // Note: services are passed by reference so commands read live state at
 // execution time. Snapshot values (UI dimensions, InputTokens, Cwd) are
@@ -14,8 +14,8 @@ import (
 	"github.com/genai-io/gen-code/internal/app/input"
 )
 
-func (m *model) commandDeps() input.CommandDeps {
-	return input.CommandDeps{
+func (m *model) slashCommandEnv() input.SlashCommandEnv {
+	return input.SlashCommandEnv{
 		// UI state
 		Input:        &m.userInput,
 		Conversation: &m.conv.ConversationModel,
@@ -61,5 +61,5 @@ func (m *model) commandDeps() input.CommandDeps {
 }
 
 func (m *model) executeCommand(ctx context.Context, inputText string) (string, tea.Cmd, bool) {
-	return input.NewCommandController(m.commandDeps()).Execute(ctx, inputText)
+	return input.NewSlashCommandController(m.slashCommandEnv()).Execute(ctx, inputText)
 }

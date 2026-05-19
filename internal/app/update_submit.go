@@ -108,7 +108,7 @@ func (m *model) dispatchSubmission(raw string) tea.Cmd {
 // the controller handled, or (nil, false) if it should fall through to a
 // provider turn.
 func (m *model) runSlashCommandIfMatched(raw string) (tea.Cmd, bool) {
-	ctrl := input.NewCommandController(m.commandDeps())
+	ctrl := input.NewSlashCommandController(m.slashCommandEnv())
 	return ctrl.HandleSubmit(raw)
 }
 
