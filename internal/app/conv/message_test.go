@@ -246,7 +246,7 @@ func TestRenderActiveContentShowsRunningStateForPendingWebFetch(t *testing.T) {
 		SpinnerView:  "⋯",
 		Width:        100,
 	}
-	params.Pairs = PairToolResults(params.Messages)
+	params.InlinedResults = PrecomputeInlinedResults(params.Messages)
 
 	rendered := RenderActiveContent(params)
 	if !strings.Contains(rendered, "⋯ WebFetch(https://github.com/features/copilot/plans)") {

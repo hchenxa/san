@@ -203,7 +203,7 @@ func (m model) messageRenderParams() conv.RenderContext {
 		// Conversation state
 		Messages:       m.conv.Messages,
 		CommittedCount: m.conv.CommittedCount,
-		Pairs:          conv.PairToolResults(m.conv.Messages),
+		InlinedResults: conv.PrecomputeInlinedResults(m.conv.Messages),
 
 		// Streaming + tool execution
 		StreamActive: m.conv.Stream.Active,

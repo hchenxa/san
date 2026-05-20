@@ -14,10 +14,11 @@ type RenderContext struct {
 	// ── Conversation state ──────────────────────────────────────
 	Messages       []core.ChatMessage
 	CommittedCount int
-	// Pairs precomputes which ToolResult messages belong to which
-	// assistant message (one pass over Messages). Lets every render
-	// helper read the relationship without re-scanning the slice.
-	Pairs toolResultPairing
+	// InlinedResults precomputes which ToolResult messages will be
+	// drawn inline with their owning assistant (not as standalone
+	// messages). Built once in one pass over Messages; lets every
+	// render helper read the relationship without re-scanning.
+	InlinedResults inlinedToolResults
 
 	// ── Streaming + in-flight tool execution ────────────────────
 	StreamActive bool
@@ -45,11 +46,12 @@ type RenderContext struct {
 	InteractivePromptActive bool
 }
 
-// toolResultPairing precomputes the assistant ↔ ToolResult relationship
-// in one linear pass over the message slice. Three render helpers used
-// to re-derive this independently with subtly different scans;
-// centralising it here eliminates the drift risk and the O(n²) feel.
-type toolResultPairing struct {
+// inlinedToolResults precomputes which ToolResult messages should be
+// drawn inline with their owning assistant rather than as standalone
+// messages, in one linear pass over the message slice. Three render
+// helpers used to re-derive this independently with subtly different
+// scans; centralising it here eliminates the drift risk.
+type inlinedToolResults struct {
 	// resultOwner: ToolResult message index → owning assistant index.
 	// Used to know which results to SKIP when rendering a range (they
 	// will be drawn inline with their owning assistant instead).
@@ -59,11 +61,12 @@ type toolResultPairing struct {
 	resultsForAssistant map[int]map[string]ToolResultData
 }
 
-// PairToolResults walks `messages` once and returns the pairing. Exported
-// because the model builds it inside messageRenderParams; everything else
-// in this package just reads RenderContext.Pairs.
-func PairToolResults(messages []core.ChatMessage) toolResultPairing {
-	p := toolResultPairing{
+// PrecomputeInlinedResults walks `messages` once and returns the
+// inlining map. Exported because the model builds it inside
+// messageRenderParams; everything else in this package reads
+// RenderContext.InlinedResults.
+func PrecomputeInlinedResults(messages []core.ChatMessage) inlinedToolResults {
+	p := inlinedToolResults{
 		resultOwner:         make(map[int]int),
 		resultsForAssistant: make(map[int]map[string]ToolResultData),
 	}
@@ -105,26 +108,31 @@ func PairToolResults(messages []core.ChatMessage) toolResultPairing {
 	return p
 }
 
-// ownerOf returns the assistant index that owns the ToolResult at
-// resultIdx, or -1 if the result isn't paired with any assistant in
-// range.
-func (p toolResultPairing) ownerOf(resultIdx int) int {
+// ownerOf returns the index of the assistant message whose tool call
+// produced the ToolResult at resultIdx, or -1 if the result doesn't
+// belong to any assistant (orphan). Callers use this to know which
+// ToolResult messages to skip during a range render — those are
+// already being drawn by their owning assistant's block.
+func (p inlinedToolResults) ownerOf(resultIdx int) int {
 	if owner, ok := p.resultOwner[resultIdx]; ok {
 		return owner
 	}
 	return -1
 }
 
-// resultsFor returns the (callID → data) map for an assistant's paired
-// ToolResults, or nil if it has none.
-func (p toolResultPairing) resultsFor(assistantIdx int) map[string]ToolResultData {
+// resultsFor returns the toolCallID → ToolResultData map for an
+// assistant's inlined results, or nil if none. renderAssistantWithTools
+// uses this to assemble the result block that hangs underneath the
+// assistant's text.
+func (p inlinedToolResults) resultsFor(assistantIdx int) map[string]ToolResultData {
 	return p.resultsForAssistant[assistantIdx]
 }
 
-// IsResultInlined reports whether the ToolResult at idx will be drawn
-// inline with its owning assistant (and thus shouldn't render as a
-// standalone message).
-func (p toolResultPairing) IsResultInlined(idx int) bool {
+// IsResultInlined reports whether the ToolResult at idx is going to be
+// drawn inline with its owning assistant. RenderSingleMessage uses this
+// to short-circuit standalone rendering for results that are already
+// being shown via their assistant.
+func (p inlinedToolResults) IsResultInlined(idx int) bool {
 	_, ok := p.resultOwner[idx]
 	return ok
 }
@@ -183,7 +191,7 @@ func renderAssistantWithTools(p RenderContext, msg core.ChatMessage, idx int, is
 		sb.WriteString("\n")
 	}
 
-	resultMap := p.Pairs.resultsFor(idx)
+	resultMap := p.InlinedResults.resultsFor(idx)
 	if resultMap == nil {
 		resultMap = map[string]ToolResultData{}
 	}
@@ -220,7 +228,7 @@ func RenderMessageRange(p RenderContext, startIdx, endIdx int, includeSpinner bo
 		// Skip a ToolResult that will be drawn inline with its owning
 		// assistant — but only if the owner is also being rendered in
 		// this range. Orphan results render standalone.
-		if owner := p.Pairs.ownerOf(i); owner >= startIdx {
+		if owner := p.InlinedResults.ownerOf(i); owner >= startIdx {
 			continue
 		}
 		isStreaming := i == lastIdx && isLastStreaming
@@ -239,7 +247,7 @@ func RenderSingleMessage(p RenderContext, idx int) string {
 		return ""
 	}
 
-	if p.Messages[idx].ToolResult != nil && p.Pairs.IsResultInlined(idx) {
+	if p.Messages[idx].ToolResult != nil && p.InlinedResults.IsResultInlined(idx) {
 		return ""
 	}
 
