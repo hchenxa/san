@@ -330,9 +330,11 @@ type AssistantParams struct {
 }
 
 // InterruptedMarker is the literal suffix MarkLastInterrupted appends to an
-// assistant message's Content when the user cancels mid-stream. Stored in
-// the message so it travels to the LLM; stripped at render time so the UI
-// can show a styled badge instead of inline text.
+// assistant message's Content when the user cancels mid-stream. It lives on
+// the conv-side ChatMessage only — handleStreamCancel no longer pushes conv
+// state back into the agent, so the marker reaches the LLM only via session
+// save+reload. Stripped at render time so the UI shows a styled badge
+// instead of inline text.
 const InterruptedMarker = "[Interrupted]"
 
 // RenderAssistantMessage renders an assistant message with thinking, content, and tool calls.

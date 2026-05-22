@@ -621,6 +621,6 @@ prompt 前缀（prompt cache 命中更稳）。
 | Conv 事件路由 | [`internal/app/conv/update.go`](../../internal/app/conv/update.go) |
 | `agent.Send` / outbox 轮询 | [`internal/app/agent.go`](../../internal/app/agent.go) |
 | 流式中断处理 | [`internal/app/update_input_effects.go`](../../internal/app/update_input_effects.go) |
-| `InterruptTurn` / `ResyncMessages` | [`internal/agent/session.go`](../../internal/agent/session.go) |
+| `InterruptTurn` | [`internal/agent/session.go`](../../internal/agent/session.go) |
 | `turn` / `InterruptCurrentTurn` / Run loop | [`internal/core/agent_impl.go`](../../internal/core/agent_impl.go) |
 | 底部 UI 组合 | [`internal/app/view.go`](../../internal/app/view.go) |

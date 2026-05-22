@@ -144,14 +144,18 @@ func (s *State) Fail(ctx context.Context, ch chan<- llm.StreamChunk, err error) 
 // Finish logs stream completion, logs the final response, and emits the done chunk.
 // It copies the response so the receiver does not retain a pointer into State,
 // allowing the State (and its string builders) to be GC'd.
+//
+// The Done chunk is sent via the ctx-aware send helper so a cancel that races
+// the provider's natural stream completion doesn't wedge this goroutine on an
+// unbuffered channel after the bridge has already exited via ctx.Done.
 func (s *State) Finish(ctx context.Context, ch chan<- llm.StreamChunk) {
 	s.Response.Content = s.contentBuf.String()
 	s.Response.Thinking = s.thinkingBuf.String()
 	log.LogStreamDone(s.ProviderName, time.Since(s.Start), s.ChunkCount)
 	log.LogResponseCtx(ctx, s.ProviderName, s.Response)
 	resp := s.Response // shallow copy — breaks the pointer into State
-	ch <- llm.StreamChunk{
+	send(ctx, ch, llm.StreamChunk{
 		Type:     llm.ChunkTypeDone,
 		Response: &resp,
-	}
+	})
 }

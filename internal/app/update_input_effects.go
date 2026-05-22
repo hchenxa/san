@@ -30,7 +30,9 @@ func (m *model) handleStreamCancel() tea.Cmd {
 	// state back into the agent.
 	m.services.Agent.InterruptTurn()
 	if m.services.Reminder != nil {
-		m.services.Reminder.Enqueue(InterruptReminder)
+		// EnqueueOnce so mashed Esc keys don't attach N identical
+		// <system-reminder> blocks to the next user message.
+		m.services.Reminder.EnqueueOnce(InterruptReminder)
 	}
 	m.conv.Stream.Stop()
 	m.conv.ProgressHub.DrainPendingQuestions()

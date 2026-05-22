@@ -51,8 +51,9 @@ type agent struct {
 
 // turnHandle binds the per-turn cancel function to a done channel so an
 // outside caller (Task.InterruptTurn) can both cancel the turn and wait
-// for ThinkAct to actually unwind before mutating shared state (e.g.
-// ResyncMessages overwriting a.messages).
+// for ThinkAct to actually unwind before resuming work that depends on
+// the agent goroutine being quiescent (e.g. clearing pendingPermRequest
+// without racing an in-flight PermissionFunc write).
 type turnHandle struct {
 	cancel context.CancelFunc
 	done   chan struct{}
@@ -120,32 +121,12 @@ func (a *agent) Run(ctx context.Context) error {
 		glog.QueueLog("agent.Run: waitForInput received message")
 
 		for {
-			// Consume any interrupt that landed between turns: when Run
-			// is between ThinkAct calls the turn pointer is nil, so
-			// InterruptCurrentTurn's Swap returns nil and would silently
-			// drop the cancel. The latch captures that case and bails
-			// here instead of starting an unwanted new inference.
-			if a.interruptPending.Swap(false) {
-				glog.QueueLog("agent.Run: interrupt latched between turns, resuming wait")
+			glog.QueueLog("agent.Run: starting ThinkAct")
+			result, err, interrupted := a.runOneTurn(ctx)
+			if interrupted {
+				glog.QueueLog("agent.Run: interrupt latched, resuming wait")
 				break
 			}
-
-			glog.QueueLog("agent.Run: starting ThinkAct")
-			turnCtx, turnCancel := context.WithCancel(ctx)
-			h := &turnHandle{cancel: turnCancel, done: make(chan struct{})}
-			a.turn.Store(h)
-
-			result, err := a.ThinkAct(turnCtx)
-
-			// Detach before cancelling so a racing InterruptCurrentTurn
-			// becomes a no-op rather than cancelling the next turn.
-			if a.turn.CompareAndSwap(h, nil) {
-				turnCancel()
-			}
-			// Signal "turn fully unwound" — Task.InterruptTurn waits on
-			// this so its follow-up ResyncMessages cannot race against
-			// the agent's own appends from inside ThinkAct.
-			close(h.done)
 
 			if result != nil {
 				glog.QueueLog("agent.Run: ThinkAct done, emitting TurnEvent")
@@ -165,6 +146,11 @@ func (a *agent) Run(ctx context.Context) error {
 				// the model knows the prior response did not complete.
 				if ctx.Err() == nil && errors.Is(err, context.Canceled) {
 					glog.QueueLog("agent.Run: turn interrupted by user, resuming wait")
+					// Consume the latch that triggered this cancel so the
+					// next user message can start a fresh turn. Narrow
+					// race: a brand-new Interrupt that arrives between
+					// close(h.done) and this Store can be clobbered; the
+					// 2nd Esc is treated as a duplicate of the first.
 					a.interruptPending.Store(false)
 					break
 				}
@@ -188,10 +174,42 @@ func (a *agent) Run(ctx context.Context) error {
 	}
 }
 
+// runOneTurn runs a single ThinkAct under a per-turn cancellable ctx and
+// returns whether an interrupt was latched (instead of running the turn).
+//
+// The latch is checked AFTER publishing turn=h so that any concurrent
+// InterruptCurrentTurn is honored exactly once:
+//   - If InterruptCurrentTurn ran BEFORE our Store, its Swap saw turn=nil
+//     and set interruptPending=true; our post-Store Swap reads it.
+//   - If InterruptCurrentTurn ran AFTER our Store, its Swap saw turn=h
+//     and cancelled turnCtx; ThinkAct exits via context.Canceled.
+//
+// Cleanup (detach + close(done)) is deferred so a panic in ThinkAct still
+// releases turnCtx and signals waiters in Task.InterruptTurn.
+func (a *agent) runOneTurn(ctx context.Context) (*Result, error, bool) {
+	turnCtx, turnCancel := context.WithCancel(ctx)
+	h := &turnHandle{cancel: turnCancel, done: make(chan struct{})}
+	a.turn.Store(h)
+	defer func() {
+		if a.turn.CompareAndSwap(h, nil) {
+			turnCancel()
+		}
+		close(h.done)
+	}()
+
+	if a.interruptPending.Swap(false) {
+		return nil, nil, true
+	}
+
+	result, err := a.ThinkAct(turnCtx)
+	return result, err, false
+}
+
 // InterruptCurrentTurn cancels the ctx of the currently-running ThinkAct
 // without ending Run. Returns a channel that closes when the in-flight
 // ThinkAct has fully unwound — callers that need to observe a quiescent
-// agent (e.g. before pushing a new message) should wait on the channel.
+// agent (e.g. before mutating shared state that the agent goroutine
+// might also touch) should wait on the channel.
 //
 // When called between turns (turn pointer is nil), latches the
 // interrupt so the next inner-loop iteration bails before starting a
@@ -544,6 +562,15 @@ func (a *agent) streamInfer(ctx context.Context) (*InferResponse, error) {
 		select {
 		case chunk, ok := <-chunks:
 			if !ok {
+				// ctx-cancellation racing the bridge's defer close(ch)
+				// produces both ok==false and ctx.Done() ready at the
+				// same time — select picks randomly. Check ctx.Err()
+				// first so a cancel is always reported as
+				// context.Canceled, never as "stream closed without
+				// response" (which Run does not treat as an interrupt).
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
 				if resp == nil {
 					return nil, fmt.Errorf("infer: stream closed without response")
 				}

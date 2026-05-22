@@ -100,21 +100,26 @@ const interruptDrainTimeout = 250 * time.Millisecond
 // the moment of interrupt is dropped along with the turn, so the
 // dangling *PermBridgeRequest must not survive into the next turn (a
 // later SetPendingPermission would then race a stale request against a
-// fresh one). The prior Stop()-based cancel cleared this implicitly via
-// stopLocked; that path no longer runs here.
+// fresh one). The clear runs AFTER the agent quiesces so an in-flight
+// PermissionFunc can't repopulate pendingPermRequest via PollPermBridge
+// → SetPendingPermission between the clear and the cancel.
 func (s *Task) InterruptTurn() {
-	s.mu.Lock()
+	s.mu.RLock()
 	ag := s.agent
-	s.pendingPermRequest = nil
-	s.mu.Unlock()
+	s.mu.RUnlock()
 	if ag == nil {
 		return
 	}
 	done := ag.InterruptCurrentTurn()
+	timer := time.NewTimer(interruptDrainTimeout)
+	defer timer.Stop()
 	select {
 	case <-done:
-	case <-time.After(interruptDrainTimeout):
+	case <-timer.C:
 	}
+	s.mu.Lock()
+	s.pendingPermRequest = nil
+	s.mu.Unlock()
 }
 
 func (s *Task) Outbox() <-chan core.Event {
