@@ -66,15 +66,28 @@ func (m *ConversationModel) AppendToLast(text, thinking string) {
 }
 
 func (m *ConversationModel) SetLastToolCalls(calls []core.ToolCall) {
-	if len(m.Messages) > 0 {
-		m.Messages[len(m.Messages)-1].ToolCalls = calls
+	if len(m.Messages) == 0 {
+		return
 	}
+	last := &m.Messages[len(m.Messages)-1]
+	// Defensive: tool_calls only belong on an assistant message. Without
+	// this check, a late PostInfer event landing after the cancel handler
+	// has appended a trailing user marker would corrupt that marker.
+	if last.Role != core.RoleAssistant {
+		return
+	}
+	last.ToolCalls = calls
 }
 
 func (m *ConversationModel) SetLastThinkingSignature(sig string) {
-	if len(m.Messages) > 0 && sig != "" {
-		m.Messages[len(m.Messages)-1].ThinkingSignature = sig
+	if sig == "" || len(m.Messages) == 0 {
+		return
 	}
+	last := &m.Messages[len(m.Messages)-1]
+	if last.Role != core.RoleAssistant {
+		return
+	}
+	last.ThinkingSignature = sig
 }
 
 func (m *ConversationModel) AppendErrorToLast(err error) {
@@ -132,9 +145,12 @@ const InterruptedByUserMarker = "[Request interrupted by user]"
 
 // AppendInterruptedByUserMarker appends [[InterruptedByUserMarker]] as a
 // user-role message so subsequent inference sees a clean turn boundary
-// after a cancel. Idempotent: skips if the last message is already the
-// marker (or a tool result, which already conveys the interruption via
-// its cancelled-tool-result content).
+// after a cancel. Idempotent against back-to-back cancels: skips if the
+// last message is already this exact marker. Intentionally appended
+// even when the tail is a cancelled tool result — that result is
+// addressed to the assistant's tool_use; the marker is the user's own
+// explicit signal and gives the next inference an unambiguous user
+// turn to react to.
 func (m *ConversationModel) AppendInterruptedByUserMarker() {
 	if len(m.Messages) > 0 {
 		last := m.Messages[len(m.Messages)-1]

@@ -185,6 +185,14 @@ func applyPostInfer(rt Runtime, m *Model, ev core.Event) tea.Cmd {
 	}
 	rt.OnTokenUsage(resp)
 	m.Compact.WarningSuppressed = false
+	// A PostInfer buffered in the outbox can arrive after handleStreamCancel
+	// has flipped Stream.Active off and appended a user-role interrupt
+	// marker as the new tail. Without this guard, SetLastThinkingSignature
+	// and SetLastToolCalls would blindly attach the cancelled turn's payload
+	// onto the user marker (or any other non-assistant tail).
+	if !m.Stream.Active {
+		return nil
+	}
 	if resp.ThinkingSignature != "" {
 		m.SetLastThinkingSignature(resp.ThinkingSignature)
 	}

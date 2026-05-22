@@ -115,6 +115,17 @@ func (m *model) OnTurnEnd(result core.Result) tea.Cmd {
 		return tea.Batch(commitCmds...)
 	}
 
+	// User-initiated cancel surfaces here as a Result with StopCancelled now
+	// that ThinkAct returns a phantom Result on context.Canceled. Stop /
+	// idle-notification hooks would otherwise fire on every Esc — confusing
+	// for the user and for hooks that template result.Content (which is
+	// empty for a cancelled turn).
+	if result.StopReason == core.StopCancelled {
+		log.QueueLog("OnTurnEnd: turn was cancelled, skipping idle hooks")
+		commitCmds = append(commitCmds, m.ContinueOutbox())
+		return tea.Batch(commitCmds...)
+	}
+
 	log.QueueLog("OnTurnEnd: firing idle hooks async")
 	commitCmds = append(commitCmds, m.fireIdleHooksCmd(result), m.ContinueOutbox())
 	return tea.Batch(commitCmds...)

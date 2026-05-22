@@ -355,9 +355,15 @@ func (a *agent) execTools(ctx context.Context, calls []ToolCall) int {
 		wg.Wait()
 	}
 
-	// Phase 3: Record results in order + PostTool hooks
+	// Phase 3: Record results in order + PostTool hooks. Bail on ctx cancel
+	// so an InterruptCurrentTurn that lands mid-batch does not keep
+	// appending tool results into a.messages after the UI's cancel handler
+	// has already written its own cancelled-tool-result entries.
 	var toolUses int
 	for i, t := range tasks {
+		if ctx.Err() != nil {
+			break
+		}
 		r := results[i]
 		if r.err != nil {
 			a.appendResult(t.call, r.err.Error(), true)

@@ -202,7 +202,7 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 
 		for result, err := range c.client.Models.GenerateContentStream(ctx, opts.Model, contents, config) {
 			if err != nil {
-				state.Fail(ch, err)
+				state.Fail(ctx, ch, err)
 				return
 			}
 			state.Count()
@@ -217,9 +217,9 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 					// Handle text (distinguish thinking from regular text)
 					if part.Text != "" {
 						if part.Thought {
-							state.EmitThinking(ch, part.Text)
+							state.EmitThinking(ctx, ch, part.Text)
 						} else {
-							state.EmitText(ch, part.Text)
+							state.EmitText(ctx, ch, part.Text)
 						}
 					}
 
@@ -228,8 +228,8 @@ func (c *Client) Stream(ctx context.Context, opts llm.CompletionOptions) <-chan 
 						fc := part.FunctionCall
 						argsJSON, _ := json.Marshal(fc.Args)
 
-						state.EmitToolStart(ch, fc.ID, fc.Name)
-						state.EmitToolInput(ch, fc.ID, string(argsJSON))
+						state.EmitToolStart(ctx, ch, fc.ID, fc.Name)
+						state.EmitToolInput(ctx, ch, fc.ID, string(argsJSON))
 
 						state.Response.ToolCalls = append(state.Response.ToolCalls, core.ToolCall{
 							ID:               fc.ID,

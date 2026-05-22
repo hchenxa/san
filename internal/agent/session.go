@@ -87,10 +87,18 @@ func (s *Task) Send(content string, images []core.Image) {
 // Run loop. After interruption the agent goes back to waiting on the
 // inbox, so subsequent Send calls resume the session in place — no
 // rebuild, no Stop/Start event pair. No-op if no agent is active.
+//
+// Also clears pendingPermRequest: a permission prompt that was open at
+// the moment of interrupt is dropped along with the turn, so the
+// dangling *PermBridgeRequest must not survive into the next turn (a
+// later SetPendingPermission would then race a stale request against a
+// fresh one). The prior Stop()-based cancel cleared this implicitly via
+// stopLocked; that path no longer runs here.
 func (s *Task) InterruptTurn() {
-	s.mu.RLock()
+	s.mu.Lock()
 	ag := s.agent
-	s.mu.RUnlock()
+	s.pendingPermRequest = nil
+	s.mu.Unlock()
 	if ag == nil {
 		return
 	}
