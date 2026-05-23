@@ -69,8 +69,6 @@ mkdir -p ~/.local/bin && mv gen ~/.local/bin/
 
 ## 使用
 
-### 启动
-
 ```bash
 gen                            # 交互模式
 gen "解释这个函数"             # 一次性运行
@@ -79,31 +77,15 @@ gen --continue                 # 恢复最近的会话
 gen --resume                   # 选择历史会话恢复
 ```
 
-### 配置模型
+| 操作 | 命令 / 快捷键 |
+|---|---|
+| 选择 / 切换模型 | `/model` —— 保存到 `~/.gen/providers.json` |
+| 切换 thinking 级别 | `Ctrl+T` 或 `/think`（可选级别因提供商而异） |
+| 所有 slash 命令 | `/help`（`/identity`、`/search`、`/skills`、`/agents`、`/mcp`、`/compact` 等） |
+| 切换权限模式 | `Shift+Tab`（询问 · 自动接受 · 计划） |
+| 展开工具 · 取消 · 退出 | `Ctrl+O` · `Ctrl+C` · `Ctrl+D` |
 
-首次启动时执行 `/model` 选择提供商和模型。Gen Code 会提示输入 API
-Key —— 也可以提前设置好对应的环境变量（见下方 **凭据** 表格），
-Gen Code 会自动读取。随时可以再次运行 `/model` 切换模型，选择会保存
-到 `~/.gen/providers.json`。
-
-### 调整 thinking 级别
-
-对于支持扩展推理（extended thinking）的模型（Claude、GPT-5/o 系列、
-Gemini 等），按 `Ctrl+T` 或运行 `/think` 即可循环切换 thinking 预算。
-可选级别因提供商而异（Claude：`off / normal / high / ultra`；
-OpenAI 推理模型：`none / low / medium / high / xhigh`）。当前级别会
-显示在底部状态栏；级别越高，推理越深入，但延迟也会相应增加。
-
-### 其他常用功能
-
-- `/help` 列出所有 slash 命令（`/identity`、`/search`、`/skills`、`/agents`、`/mcp`、`/compact`、`/resume` 等等）。
-- `Shift+Tab` 切换权限模式（询问 · 自动接受 · 计划）。
-- `Ctrl+O` 展开工具详情 · `Ctrl+C` 取消当前回合 · `Ctrl+D` 退出。
-
-更长的入门说明见
-[`docs/guides/getting-started.md`](docs/guides/getting-started.md)，完整
-slash 命令列表见
-[`docs/reference/slash-commands.md`](docs/reference/slash-commands.md)。
+API Key：设置对应的环境变量（见下方凭据表）或在首次启动时按提示粘贴。完整入门：[`docs/guides/getting-started.md`](docs/guides/getting-started.md)。
 
 ### 配置文件
 

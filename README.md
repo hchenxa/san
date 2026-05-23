@@ -69,8 +69,6 @@ mkdir -p ~/.local/bin && mv gen ~/.local/bin/
 
 ## Usage
 
-### Start
-
 ```bash
 gen                            # interactive
 gen "explain this function"    # one-shot
@@ -79,33 +77,15 @@ gen --continue                 # resume latest session
 gen --resume                   # pick a past session
 ```
 
-### Configure a model
+| What | How |
+|---|---|
+| Pick / switch model | `/model` — saved to `~/.gen/providers.json` |
+| Cycle thinking budget | `Ctrl+T` or `/think` (levels vary by provider) |
+| All slash commands | `/help` (`/identity`, `/search`, `/skills`, `/agents`, `/mcp`, `/compact`, …) |
+| Toggle permission mode | `Shift+Tab` (ask · auto-accept · plan) |
+| Expand tool · cancel · exit | `Ctrl+O` · `Ctrl+C` · `Ctrl+D` |
 
-On first launch, run `/model` to pick a provider and model. Gen Code will
-prompt for the API key — or you can set the matching env var (see the
-**Credentials** table below) and Gen Code will pick it up automatically.
-Switch models any time with `/model`; the choice is saved to
-`~/.gen/providers.json`.
-
-### Adjust thinking
-
-For models that support extended reasoning (Claude, GPT-5/o-series,
-Gemini, etc.), press `Ctrl+T` — or run `/think` — to cycle the thinking
-budget. The available levels are provider-specific (Claude:
-`off / normal / high / ultra`; OpenAI reasoning models:
-`none / low / medium / high / xhigh`). The current level is shown in
-the status bar; higher levels trade latency for deeper reasoning.
-
-### Other essentials
-
-- `/help` lists every slash command (`/identity`, `/search`, `/skills`, `/agents`, `/mcp`, `/compact`, `/resume`, …).
-- `Shift+Tab` cycles permission modes (ask · auto-accept · plan).
-- `Ctrl+O` expands tool details · `Ctrl+C` cancels the current turn · `Ctrl+D` exits.
-
-See [`docs/guides/getting-started.md`](docs/guides/getting-started.md)
-for a longer walkthrough and
-[`docs/reference/slash-commands.md`](docs/reference/slash-commands.md)
-for the full command list.
+For API keys, set the matching env var (see Credentials below) or paste when prompted on first launch. Full walkthrough: [`docs/guides/getting-started.md`](docs/guides/getting-started.md).
 
 ### Configuration
 
