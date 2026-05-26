@@ -497,8 +497,16 @@ func (a *agent) compact(ctx context.Context) bool {
 		return false
 	}
 	originalCount := len(msgs)
-	a.SetMessages([]Message{UserMessage(FormatCompactSummary(summary), nil)})
-	a.emit(ctx, CompactEvent(a.id, CompactInfo{Summary: summary, OriginalCount: originalCount}))
+
+	// The summary becomes the sole message of the new chain. Give it a stable
+	// ID and record it as a normal message.appended so transcript replay can
+	// resolve the ID the next inference will reference; then emit the compaction
+	// boundary at that ID so replay truncates the summarized-away history.
+	summaryMsg := UserMessage(FormatCompactSummary(summary), nil)
+	summaryMsg.ID = NewMessageID()
+	a.SetMessages([]Message{summaryMsg})
+	a.emitAppend(summaryMsg)
+	a.emit(ctx, CompactEvent(a.id, CompactInfo{Summary: summary, OriginalCount: originalCount, BoundaryID: summaryMsg.ID}))
 	return true
 }
 

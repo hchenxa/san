@@ -107,8 +107,10 @@ A handful of nits:
   blocks from user content before the summarizer runs, then the harness calls
   `DiscardPendingNotices` + `EnqueueAllProviders` so fresh provider state
   reattaches to the next user turn. All providers (skills, memory-user,
-  memory-project) and one-time notices share this lifecycle. See
-  [`concepts/harness-channels.md`](../concepts/harness-channels.md#compaction).
+  memory-project) and one-time notices share this lifecycle. On PostCompact
+  the harness re-reads memory from disk before re-emitting, so an edited
+  memory file re-injects its latest content. See
+  [`concepts/compaction.md`](../concepts/compaction.md).
 
 ## Tests
 

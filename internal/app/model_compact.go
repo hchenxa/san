@@ -53,6 +53,10 @@ func (m *model) OnAutoCompact(info core.CompactInfo) tea.Cmd {
 	// session-level reminders so they reattach to the next user turn and the
 	// LLM still has skills/memory/etc. context.
 	if m.services.Reminder != nil {
+		// Re-read memory from disk before re-emitting: a reminder provider
+		// renders from the cached instructions, so without this a memory file
+		// edited mid-session would re-inject stale content after compaction.
+		m.refreshMemoryContext(m.env.CWD, "post_compact")
 		// One-time notices (cancel notice, prior hook context) refer to
 		// the now-summarized history; the model can't act on them
 		// meaningfully against the compacted prefix.
@@ -98,6 +102,10 @@ func (m *model) OnCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 	// Manual /compact also drops conversation-history reminders. Re-enqueue
 	// providers so the next user turn carries fresh session-level context.
 	if m.services.Reminder != nil {
+		// Re-read memory from disk before re-emitting: a reminder provider
+		// renders from the cached instructions, so without this a memory file
+		// edited mid-session would re-inject stale content after compaction.
+		m.refreshMemoryContext(m.env.CWD, "post_compact")
 		// One-time notices (cancel notice, prior hook context) refer to
 		// the now-summarized history; the model can't act on them
 		// meaningfully against the compacted prefix.

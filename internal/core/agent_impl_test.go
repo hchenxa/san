@@ -2,9 +2,83 @@ package core
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
+
+// Compaction must record the synthetic summary as a normal message.appended
+// (so replay can resolve the ID the next inference references) and emit a
+// CompactEvent whose BoundaryID equals that summary's ID (so replay truncates
+// the summarized-away history at the summary).
+func TestCompactRecordsSummaryAppendAndBoundary(t *testing.T) {
+	var captured []Event
+	ag := NewAgent(Config{
+		ID:     "test",
+		LLM:    newBlockingLLM(1),
+		System: NewSystem(),
+		Tools:  NewTools(),
+		CompactFunc: func(_ context.Context, _ []Message) (string, error) {
+			return "the summary", nil
+		},
+		OnEvent: func(e Event) { captured = append(captured, e) },
+	})
+	a := ag.(*agent)
+
+	// Drain the outbox so the blocking CompactEvent emit doesn't stall.
+	go func() {
+		for range ag.Outbox() {
+		}
+	}()
+
+	a.SetMessages([]Message{
+		UserMessage("hi", nil),
+		AssistantMessage("hello", "", nil),
+		UserMessage("tell me more", nil),
+	})
+
+	if !a.compact(context.Background()) {
+		t.Fatal("compact() returned false")
+	}
+
+	var summaryAppend *Message
+	var info *CompactInfo
+	for _, e := range captured {
+		switch e.Type {
+		case OnAppend:
+			if m, ok := e.Data.(Message); ok {
+				mm := m
+				summaryAppend = &mm
+			}
+		case OnCompact:
+			if ci, ok := e.CompactInfo(); ok {
+				c := ci
+				info = &c
+			}
+		}
+	}
+
+	if summaryAppend == nil {
+		t.Fatal("compact did not emit OnAppend for the summary message")
+	}
+	if summaryAppend.ID == "" {
+		t.Fatal("summary message must carry a stable ID")
+	}
+	if info == nil {
+		t.Fatal("compact did not emit OnCompact")
+	}
+	if info.BoundaryID != summaryAppend.ID {
+		t.Fatalf("boundary %q must equal summary ID %q", info.BoundaryID, summaryAppend.ID)
+	}
+
+	msgs := a.snapshot()
+	if len(msgs) != 1 || msgs[0].ID != summaryAppend.ID {
+		t.Fatalf("post-compact chain must be the single summary, got %d messages", len(msgs))
+	}
+	if !strings.Contains(msgs[0].Content, "the summary") {
+		t.Fatalf("summary content missing from chain: %q", msgs[0].Content)
+	}
+}
 
 func TestEstimatePromptTokensUsesConversationGrowth(t *testing.T) {
 	got := estimatePromptTokens(1000, 2000, 3000)
