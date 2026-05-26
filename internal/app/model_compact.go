@@ -61,7 +61,7 @@ func (m *model) OnAutoCompact(info core.CompactInfo) tea.Cmd {
 		// the now-summarized history; the model can't act on them
 		// meaningfully against the compacted prefix.
 		m.services.Reminder.DiscardPendingNotices()
-		m.services.Reminder.EnqueueAllProviders()
+		m.services.Reminder.RefreshSystemReminders()
 	}
 
 	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
@@ -110,7 +110,7 @@ func (m *model) OnCompactResult(msg conv.CompactResultMsg) tea.Cmd {
 		// the now-summarized history; the model can't act on them
 		// meaningfully against the compacted prefix.
 		m.services.Reminder.DiscardPendingNotices()
-		m.services.Reminder.EnqueueAllProviders()
+		m.services.Reminder.RefreshSystemReminders()
 	}
 
 	scrollPart := tea.Sequence(append(scrollbackCmds, tea.Println(boundary), tea.ClearScreen)...)
