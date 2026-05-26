@@ -67,7 +67,7 @@ func (m *model) OnCompacted(info core.CompactInfo) tea.Cmd {
 	if m.services.Reminder != nil {
 		m.refreshMemoryContext(m.env.CWD, "post_compact")
 		m.services.Reminder.DiscardPendingNotices()
-		m.services.Reminder.RefreshSystemReminders()
+		m.services.Reminder.RequeueSystemReminders()
 
 		// Manual /compact restores recently-accessed files as a one-time notice
 		// so they ride on the next user turn. Enqueued AFTER DiscardPendingNotices

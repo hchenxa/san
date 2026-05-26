@@ -50,7 +50,7 @@ func NewService() *Service
 func (s *Service) Register(p Provider)
 func (s *Service) Unregister(id string)
 func (s *Service) Enqueue(body string)
-func (s *Service) RefreshSystemReminders()
+func (s *Service) RequeueSystemReminders()
 // ... and a few drain/peek accessors for the harness
 
 // Standard provider IDs:
@@ -86,7 +86,7 @@ A handful of nits:
 
 - `Service` holds `providers []Provider` + a `pending []pendingEntry`
   queue. Mutex-protected.
-- `RefreshSystemReminders` is idempotent across repeated calls — it drops
+- `RequeueSystemReminders` is idempotent across repeated calls — it drops
   prior pending entries from the same provider before re-emitting, so
   `SessionStart` → `PostCompact` → `/skills` toggle in close succession
   produces one emission per provider rather than three.
@@ -100,12 +100,12 @@ A handful of nits:
   to the harness for the conversation builder.
 - Per-message: when the user submits, the harness calls
   `DrainPending()` and wraps the bodies into the outgoing user message.
-- Per-event: skill toggles / memory updates call `RefreshSystemReminders`
+- Per-event: skill toggles / memory updates call `RequeueSystemReminders`
   to refresh provider-emitted reminders.
 - On compaction: reminder blocks are **skipped, not summarized**.
   `core.BuildCompactionText` peels trailing `<system-reminder>…</system-reminder>`
   blocks from user content before the summarizer runs, then the harness calls
-  `DiscardPendingNotices` + `RefreshSystemReminders` so fresh provider state
+  `DiscardPendingNotices` + `RequeueSystemReminders` so fresh provider state
   reattaches to the next user turn. All providers (skills, memory-user,
   memory-project) and one-time notices share this lifecycle. On PostCompact
   the harness re-reads memory from disk before re-emitting, so an edited
