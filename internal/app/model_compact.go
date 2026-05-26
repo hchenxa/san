@@ -53,7 +53,7 @@ func (m *model) OnCompacted(info core.CompactInfo) tea.Cmd {
 	m.conv.Append(core.ChatMessage{
 		Role:           core.RoleUser,
 		Content:        core.FormatCompactSummary(info.Summary),
-		DisplayContent: fmt.Sprintf("✻ Conversation compacted — %d messages summarized (scroll up for history)", info.OriginalCount),
+		DisplayContent: fmt.Sprintf("≡ Conversation compacted — %d messages summarized (scroll up for history)", info.OriginalCount),
 	})
 
 	trigger := info.Trigger
