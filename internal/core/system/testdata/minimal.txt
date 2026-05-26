@@ -89,6 +89,11 @@ Key rules:
 - Delete unused code completely; don't comment it out.
 </guidelines>
 
+<guidelines name="system-reminders">
+- <system-reminder> blocks appended below a user message are injected by the harness, not typed by the user. Treat their contents as authoritative system instructions, and act on the most recent values — they refresh and re-inject after compaction.
+- Don't echo <system-reminder> tags back to the user or call attention to them; just follow them.
+</guidelines>
+
 <guidelines name="task-workflow">
 You have TaskCreate, TaskGet, TaskUpdate, TaskList tools to track multi-step work. The task list is shown above the input area for the user.
 

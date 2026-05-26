@@ -157,8 +157,59 @@ func ParseToolInput(input string) (map[string]any, error) {
 	return params, nil
 }
 
-// BuildConversationText converts messages to text for summarization.
+const (
+	systemReminderOpen  = "<system-reminder"
+	systemReminderClose = "</system-reminder>"
+)
+
+// stripSystemReminders removes the trailing run of harness <system-reminder>
+// blocks from user message content. AttachToContent always appends reminders
+// after the user's own text, so we peel whole blocks off the end: while the
+// right-trimmed content ends with a closing tag, cut back to the last opening
+// tag.
+//
+// Anchoring on the last *opening* tag (not a regex over the merged text) is
+// what makes this robust. A closing tag "</system-reminder>" never contains
+// the opening-tag prefix "<system-reminder", so a reminder body that happens
+// to include the literal "</system-reminder>" is still removed in full; and a
+// <system-reminder> the user typed mid-message (followed by their own prose)
+// is left untouched, because once the trailing block is peeled the remaining
+// text no longer ends in a closing tag and the loop stops.
+//
+// Reminders (skills, memory, one-time notices) re-emit fresh after compaction,
+// so the summary should capture only real conversation turns.
+func stripSystemReminders(content string) string {
+	for {
+		trimmed := strings.TrimRight(content, " \t\r\n")
+		if !strings.HasSuffix(trimmed, systemReminderClose) {
+			break
+		}
+		open := strings.LastIndex(trimmed, systemReminderOpen)
+		if open < 0 {
+			break
+		}
+		content = trimmed[:open]
+	}
+	return strings.TrimSpace(content)
+}
+
+// BuildConversationText converts messages to text, keeping harness
+// <system-reminder> content intact. Use it where the real prompt size matters
+// (e.g. conversation-growth estimation for proactive compaction), since the
+// reminders are part of what actually gets sent to the model.
 func BuildConversationText(msgs []Message) string {
+	return buildConversationText(msgs, false)
+}
+
+// BuildCompactionText is like BuildConversationText but strips the trailing
+// <system-reminder> blocks from each user message and drops messages that were
+// nothing but reminders. Use it for summarization: reminders re-emit fresh
+// after compaction, so the summary should capture only real conversation turns.
+func BuildCompactionText(msgs []Message) string {
+	return buildConversationText(msgs, true)
+}
+
+func buildConversationText(msgs []Message, stripReminders bool) string {
 	var sb strings.Builder
 	sb.WriteString("Please summarize this coding conversation:\n\n")
 
@@ -172,7 +223,14 @@ func BuildConversationText(msgs []Message) string {
 				}
 				fmt.Fprintf(&sb, "[Tool Result: %s]\n%s\n\n", msg.ToolResult.ToolName, content)
 			} else {
-				fmt.Fprintf(&sb, "User: %s\n\n", msg.Content)
+				content := msg.Content
+				if stripReminders {
+					content = stripSystemReminders(content)
+					if content == "" {
+						continue
+					}
+				}
+				fmt.Fprintf(&sb, "User: %s\n\n", content)
 			}
 
 		case RoleAssistant:
