@@ -12,6 +12,8 @@
   </p>
 </div>
 
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/84cd2770-e2c4-488f-96e0-d512fb3bfb38" />
+
 Gen Code is a terminal coding assistant with pluggable LLM providers, search engines, personas, and skill/extension surfaces — fully compatible with [Claude Code](https://claude.ai/code) skills, plugins, and MCP servers. Implemented in Go as a single binary with concurrent multi-agent orchestration.
 
 ## Features
