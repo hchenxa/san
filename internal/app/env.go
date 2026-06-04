@@ -112,6 +112,20 @@ func (m *env) GetModelID() string {
 	return "claude-sonnet-4-20250514"
 }
 
+// GetModelDisplayName returns a human-readable display name for the current
+// model by looking it up in the store's cached model list. Falls back to the
+// raw model ID if no display name is found.
+func (m *env) GetModelDisplayName() string {
+	id := m.GetModelID()
+	if m.store == nil {
+		return id
+	}
+	if name := m.store.CachedModelDisplayName(id); name != "" {
+		return name
+	}
+	return id
+}
+
 func (m *env) EffectiveThinkingEffort() string {
 	return llm.ResolveThinkingEffort(m.LLMProvider, m.GetModelID(), m.ThinkingEffort)
 }
