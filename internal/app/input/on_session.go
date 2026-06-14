@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/genai-io/san/internal/app/kit"
 	"github.com/genai-io/san/internal/session"
@@ -131,7 +131,7 @@ func (s *SessionSelector) Select() tea.Cmd {
 }
 
 func (s *SessionSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
-	if key.Type == tea.KeyEnter {
+	if key.String() == "enter" {
 		return s.Select()
 	}
 
@@ -143,7 +143,7 @@ func (s *SessionSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	if key.Type == tea.KeyEsc {
+	if key.String() == "esc" {
 		s.Cancel()
 		return func() tea.Msg { return kit.DismissedMsg{} }
 	}

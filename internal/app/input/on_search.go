@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/genai-io/san/internal/app/kit"
 	"github.com/genai-io/san/internal/llm"
@@ -141,34 +141,21 @@ func (s *SearchSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 		return s.handleAPIKeyInput(key)
 	}
 
-	switch key.Type {
-	case tea.KeyUp, tea.KeyCtrlP:
+	switch key.String() {
+	case "up", "ctrl+p", "k":
 		if s.selectedIdx > 0 {
 			s.selectedIdx--
 		}
-		return nil
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n", "j":
 		if s.selectedIdx < len(s.items)-1 {
 			s.selectedIdx++
 		}
-		return nil
-	case tea.KeyEnter:
+	case "enter":
 		return s.Select()
-	case tea.KeyEsc:
+	case "esc":
 		s.Cancel()
 		return func() tea.Msg {
 			return kit.DismissedMsg{}
-		}
-	}
-
-	switch key.String() {
-	case "j":
-		if s.selectedIdx < len(s.items)-1 {
-			s.selectedIdx++
-		}
-	case "k":
-		if s.selectedIdx > 0 {
-			s.selectedIdx--
 		}
 	case "e":
 		s.openAPIKeyInput()
@@ -195,8 +182,8 @@ func (s *SearchSelector) openAPIKeyInput() {
 }
 
 func (s *SearchSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
-	switch key.Type {
-	case tea.KeyEnter:
+	switch key.String() {
+	case "enter":
 		value := strings.TrimSpace(s.apiKeyInput.Value())
 		if value == "" {
 			return nil
@@ -215,7 +202,7 @@ func (s *SearchSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
 		}
 		s.apiKeyActive = false
 		return s.Select()
-	case tea.KeyEsc:
+	case "esc":
 		s.apiKeyActive = false
 		return nil
 	default:
@@ -271,7 +258,7 @@ func (s *SearchSelector) Render() string {
 
 		if s.apiKeyActive && isSelected {
 			label := dimStyle.Render(s.apiKeyEnvVar + ": ")
-			inputBg := lipgloss.AdaptiveColor{Dark: "#1E293B", Light: "#F1F5F9"}
+			inputBg := kit.AdaptiveColor{Dark: "#1E293B", Light: "#F1F5F9"}
 			boxStyle := lipgloss.NewStyle().Background(inputBg).Padding(0, 1)
 			body.WriteString("      " + boxStyle.Render(label+s.apiKeyInput.View()))
 			body.WriteString("\n")

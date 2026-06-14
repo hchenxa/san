@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/genai-io/san/internal/app/kit"
 	"github.com/genai-io/san/internal/tool"
@@ -30,7 +30,7 @@ func NewQuestionPrompt() *QuestionPrompt {
 	ti := textinput.New()
 	ti.Placeholder = "Type your answer..."
 	ti.CharLimit = 200
-	ti.Width = 50
+	ti.SetWidth(50)
 
 	return &QuestionPrompt{
 		selectedOption: make(map[int]int),
@@ -95,10 +95,10 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 	}
 
 	if p.showingCustom {
-		switch msg.Type {
-		case tea.KeyEnter:
+		switch msg.String() {
+		case "enter":
 			return p.submitCustomInput()
-		case tea.KeyEsc:
+		case "esc":
 			p.showingCustom = false
 			p.customInput.Blur()
 			return nil, nil
@@ -117,41 +117,41 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 	}
 	curOption := p.selectedOption[p.currentQuestion]
 
-	switch msg.Type {
-	case tea.KeyLeft:
+	switch msg.String() {
+	case "left":
 		if len(p.request.Questions) > 1 && p.currentQuestion > 0 {
 			p.currentQuestion--
 			p.restoreCustomInput()
 		}
 		return nil, nil
 
-	case tea.KeyRight:
+	case "right":
 		if len(p.request.Questions) > 1 && p.currentQuestion < len(p.request.Questions)-1 {
 			p.currentQuestion++
 			p.restoreCustomInput()
 		}
 		return nil, nil
 
-	case tea.KeyTab:
+	case "tab":
 		if len(p.request.Questions) > 1 {
 			p.currentQuestion = (p.currentQuestion + 1) % len(p.request.Questions)
 			p.restoreCustomInput()
 		}
 		return nil, nil
 
-	case tea.KeyUp, tea.KeyCtrlP:
+	case "up", "ctrl+p":
 		if curOption > 0 {
 			p.selectedOption[p.currentQuestion] = curOption - 1
 		}
 		return nil, nil
 
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n":
 		if curOption < numOptions-1 {
 			p.selectedOption[p.currentQuestion] = curOption + 1
 		}
 		return nil, nil
 
-	case tea.KeySpace:
+	case "space":
 		if curOption == customIdx {
 			p.showingCustom = true
 			p.customInput.Focus()
@@ -170,7 +170,7 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 		}
 		return nil, nil
 
-	case tea.KeyEnter:
+	case "enter":
 		if curOption == customIdx {
 			p.showingCustom = true
 			p.customInput.Focus()
@@ -186,7 +186,7 @@ func (p *QuestionPrompt) HandleKeypress(msg tea.KeyMsg) (tea.Cmd, *QuestionRespo
 
 		return p.tryFinishOrAdvance()
 
-	case tea.KeyEsc, tea.KeyCtrlC:
+	case "esc", "ctrl+c":
 		req := p.request
 		p.Hide()
 		return nil, &QuestionResponseMsg{

@@ -1,6 +1,6 @@
 package kit
 
-import tea "github.com/charmbracelet/bubbletea"
+import tea "charm.land/bubbletea/v2"
 
 // ListNav manages cursor position, scroll offset, and search state for
 // list-based selectors. Embed it in selector Models to eliminate the
@@ -74,40 +74,43 @@ func (n *ListNav) VisibleRange() (start, end int) {
 // Esc with an empty search returns consumed=false so callers can handle dismiss.
 // Enter and other action keys are NOT handled — callers implement those.
 func (n *ListNav) HandleKey(key tea.KeyMsg) (searchChanged, consumed bool) {
-	switch key.Type {
-	case tea.KeyUp, tea.KeyCtrlP:
+	switch key.String() {
+	case "up", "ctrl+p":
 		n.MoveUp()
 		return false, true
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n":
 		n.MoveDown()
 		return false, true
-	case tea.KeyEsc:
+	case "esc":
 		if n.Search != "" {
 			n.Search = ""
 			return true, true
 		}
 		return false, false
-	case tea.KeyBackspace:
+	case "backspace":
 		if len(n.Search) > 0 {
 			runes := []rune(n.Search)
 			n.Search = string(runes[:len(runes)-1])
 			return true, true
 		}
 		return false, true
-	case tea.KeyRunes:
-		// Vim-style navigation takes priority when search is empty.
-		if n.Search == "" {
-			switch key.String() {
-			case "j":
-				n.MoveDown()
-				return false, true
-			case "k":
-				n.MoveUp()
-				return false, true
+	default:
+		// Typed text capture. Vim-style navigation takes priority when the
+		// search is empty; otherwise the printable character is search input.
+		if text := key.Key().Text; text != "" {
+			if n.Search == "" {
+				switch key.String() {
+				case "j":
+					n.MoveDown()
+					return false, true
+				case "k":
+					n.MoveUp()
+					return false, true
+				}
 			}
+			n.Search += text
+			return true, true
 		}
-		n.Search += string(key.Runes)
-		return true, true
 	}
 	return false, false
 }

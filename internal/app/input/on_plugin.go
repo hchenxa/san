@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/genai-io/san/internal/app/kit"
 	coreplugin "github.com/genai-io/san/internal/plugin"
@@ -309,44 +309,35 @@ func (s *PluginSelector) HandleKeypress(key tea.KeyMsg) tea.Cmd {
 }
 
 func (s *PluginSelector) handleAddMarketplaceKeypress(key tea.KeyMsg) tea.Cmd {
-	switch key.Type {
-	case tea.KeyEsc:
+	switch key.String() {
+	case "esc":
 		s.goBack()
 		return nil
-	case tea.KeyEnter:
+	case "enter":
 		return s.addMarketplace()
-	case tea.KeyBackspace:
+	case "backspace":
 		if len(s.addMarketplaceInput) > 0 {
 			s.addMarketplaceInput = s.addMarketplaceInput[:len(s.addMarketplaceInput)-1]
 		}
 		return nil
-	case tea.KeyRunes:
-		input := key.String()
-		if s.addMarketplaceInput == "" {
-			input = strings.TrimPrefix(input, "[")
-		}
-		input = strings.TrimSuffix(input, "]")
-		if input != "" {
-			s.addMarketplaceInput += input
+	default:
+		// Typed text capture: append printable characters to the input.
+		if text := key.Key().Text; text != "" {
+			s.addMarketplaceInput += text
 		}
 		return nil
 	}
-	return nil
 }
 
 func (s *PluginSelector) handleDetailKeypress(key tea.KeyMsg) tea.Cmd {
 	if s.handleNavigationKey(key, true) {
 		return nil
 	}
-	switch key.Type {
-	case tea.KeyEnter:
+	switch key.String() {
+	case "enter":
 		return s.executeAction()
-	case tea.KeyEsc, tea.KeyLeft:
+	case "esc", "left", "h":
 		s.goBack()
-	case tea.KeyRunes:
-		if key.String() == "h" {
-			s.goBack()
-		}
 	}
 	return nil
 }
@@ -355,8 +346,8 @@ func (s *PluginSelector) handleBrowseKeypress(key tea.KeyMsg) tea.Cmd {
 	if s.handleNavigationKey(key, true) {
 		return nil
 	}
-	switch key.Type {
-	case tea.KeyEnter:
+	switch key.String() {
+	case "enter":
 		if s.selectedIdx < len(s.browsePlugins) {
 			p := s.browsePlugins[s.selectedIdx]
 			s.detailDiscover = &p
@@ -364,7 +355,7 @@ func (s *PluginSelector) handleBrowseKeypress(key tea.KeyMsg) tea.Cmd {
 			s.actionIdx = 0
 			s.level = pluginLevelDetail
 		}
-	case tea.KeyEsc, tea.KeyLeft:
+	case "esc", "left":
 		s.goBack()
 	}
 	return nil
@@ -372,23 +363,22 @@ func (s *PluginSelector) handleBrowseKeypress(key tea.KeyMsg) tea.Cmd {
 
 // handleNavigationKey handles common up/down navigation keys, returns true if handled.
 func (s *PluginSelector) handleNavigationKey(key tea.KeyMsg, vimKeys bool) bool {
-	switch key.Type {
-	case tea.KeyUp, tea.KeyCtrlP:
+	switch key.String() {
+	case "up", "ctrl+p":
 		s.MoveUp()
 		return true
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n":
 		s.MoveDown()
 		return true
-	case tea.KeyRunes:
+	case "k":
 		if vimKeys {
-			switch key.String() {
-			case "k":
-				s.MoveUp()
-				return true
-			case "j":
-				s.MoveDown()
-				return true
-			}
+			s.MoveUp()
+			return true
+		}
+	case "j":
+		if vimKeys {
+			s.MoveDown()
+			return true
 		}
 	}
 	return false
@@ -396,11 +386,11 @@ func (s *PluginSelector) handleNavigationKey(key tea.KeyMsg, vimKeys bool) bool 
 
 func (s *PluginSelector) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 	if s.searchQuery == "" {
-		switch key.Type {
-		case tea.KeyTab, tea.KeyRight:
+		switch key.String() {
+		case "tab", "right":
 			s.NextTab()
 			return nil
-		case tea.KeyShiftTab, tea.KeyLeft:
+		case "shift+tab", "left":
 			s.PrevTab()
 			return nil
 		}
@@ -410,11 +400,11 @@ func (s *PluginSelector) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	switch key.Type {
-	case tea.KeyEnter:
+	switch key.String() {
+	case "enter":
 		s.enterDetail()
 		return nil
-	case tea.KeyEsc:
+	case "esc":
 		if s.searchQuery != "" {
 			s.searchQuery = ""
 			s.updateFilter()
@@ -422,14 +412,17 @@ func (s *PluginSelector) handleListKeypress(key tea.KeyMsg) tea.Cmd {
 		}
 		s.Cancel()
 		return func() tea.Msg { return kit.DismissedMsg{} }
-	case tea.KeyBackspace:
+	case "backspace":
 		if len(s.searchQuery) > 0 {
 			s.searchQuery = s.searchQuery[:len(s.searchQuery)-1]
 			s.updateFilter()
 		}
 		return nil
-	case tea.KeyRunes:
-		return s.handleListRuneKey(key.String())
+	default:
+		// Typed text capture (printable runes drive vim keys / search).
+		if text := key.Key().Text; text != "" {
+			return s.handleListRuneKey(text)
+		}
 	}
 	return nil
 }

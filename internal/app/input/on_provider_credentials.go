@@ -5,16 +5,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/genai-io/san/internal/llm"
 	"github.com/genai-io/san/internal/secret"
 )
 
 func (s *ProviderSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
-	switch key.Type {
-	case tea.KeyEnter:
+	switch key.String() {
+	case "enter":
 		value := strings.TrimSpace(s.apiKeyInput.Value())
 		if value == "" {
 			return nil
@@ -35,7 +35,7 @@ func (s *ProviderSelector) handleAPIKeyInput(key tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 
-	case tea.KeyEsc:
+	case "esc":
 		s.apiKeyActive = false
 		return nil
 
@@ -245,7 +245,7 @@ func (s *ProviderSelector) initAPIKeyInput(envVar string) {
 	ti.Placeholder = envVar
 	ti.Focus()
 	ti.CharLimit = 256
-	ti.Width = 40
+	ti.SetWidth(40)
 	ti.EchoMode = textinput.EchoPassword
 	s.apiKeyInput = ti
 	s.apiKeyActive = true
