@@ -68,6 +68,10 @@ type model struct {
 	// the UI goroutine at render time — a sync.Map, shared by pointer across
 	// value-receiver copies of the model.
 	pendingDecisions *sync.Map // tool call ID → core.ReviewDecision
+
+	// Streaming blocks render their markdown off the UI goroutine so a completed
+	// block never stalls repaint. See flushState and model_scrollback.go.
+	flush flushState
 }
 
 var _ conv.Runtime = (*model)(nil)
