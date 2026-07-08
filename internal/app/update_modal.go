@@ -3,19 +3,51 @@
 package app
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/genai-io/san/internal/app/conv"
 	"github.com/genai-io/san/internal/app/input"
+	"github.com/genai-io/san/internal/setting"
 	"github.com/genai-io/san/internal/tool"
 )
 
-func (m *model) cycleOperationMode() {
+func (m *model) cycleOperationMode() tea.Cmd {
 	allowBypass := m.services.Setting.AllowBypass()
 	m.env.OperationMode = m.env.OperationMode.NextWithBypass(allowBypass)
 	m.env.ApplyModePermissions(m.env.CWD)
 
 	m.services.Hook.SetPermissionMode(m.env.OperationModeName())
+	// Landing on AutoPilot opens the mission hands-free (Start) or surfaces the
+	// opening proposal (Suggest) — but debounce it: the cycle wraps through
+	// AutoPilot, so a gesture that only passes through it must not fire a wasted
+	// LLM call. Confirm the user actually rested here (handleAutopilotModeSettled).
+	if m.env.OperationMode == setting.ModeAutoPilot {
+		return tea.Tick(autopilotSettleDelay, func(time.Time) tea.Msg { return autopilotModeSettledMsg{} })
+	}
+	return nil
+}
+
+// autopilotSettleDelay is how long the mode must rest on AutoPilot before the
+// kick/suggest fires — long enough to skip a pass-through cycle, short enough to
+// feel immediate when the user deliberately stops here.
+const autopilotSettleDelay = 250 * time.Millisecond
+
+// autopilotModeSettledMsg fires autopilotSettleDelay after landing on AutoPilot.
+type autopilotModeSettledMsg struct{}
+
+// handleAutopilotModeSettled runs the deferred kick/suggest once the mode has
+// rested on AutoPilot. It no-ops if the user has since cycled away or a turn is
+// in flight, so a pass-through cycle costs nothing.
+func (m *model) handleAutopilotModeSettled() tea.Cmd {
+	if !m.autopilotEngaged() {
+		return nil
+	}
+	if cmd := m.autopilotKickCmd(); cmd != nil {
+		return cmd
+	}
+	return m.startPromptSuggestion()
 }
 
 func (m *model) updateMode(msg tea.Msg) (tea.Cmd, bool) {

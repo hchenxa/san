@@ -59,14 +59,33 @@ func StartPromptSuggestion(deps PromptSuggestionDeps) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	return deps.Input.PromptSuggestion.Start(req)
+}
 
-	deps.Input.PromptSuggestion.Clear()
-
+// Start runs a pre-built suggestion request, wiring its cancellation into the
+// state so it supersedes any in-flight hint. Callers that need a bespoke request
+// (e.g. the autopilot mission hint) build it and call this directly. Returns nil
+// if the request has no client.
+func (s *PromptSuggestionState) Start(req PromptSuggestionRequest) tea.Cmd {
+	if req.Client == nil {
+		return nil
+	}
+	s.Clear()
 	ctx, cancel := context.WithCancel(context.Background())
-	deps.Input.PromptSuggestion.cancel = cancel
+	s.cancel = cancel
 	req.Ctx = ctx
-
 	return SuggestPromptCmd(req)
+}
+
+// RecentSuggestionMessages returns the tail of the conversation (at most
+// maxSuggestionMessages) as provider messages — the shared context window every
+// input hint feeds its model.
+func RecentSuggestionMessages(c *conv.ConversationModel) []core.Message {
+	startIdx := 0
+	if len(c.Messages) > maxSuggestionMessages {
+		startIdx = len(c.Messages) - maxSuggestionMessages
+	}
+	return c.ConvertToProviderFrom(startIdx)
 }
 
 func HandlePromptSuggestion(state *Model, active bool, inputValue string, msg PromptSuggestionMsg) {
@@ -94,6 +113,9 @@ func SuggestPromptCmd(req PromptSuggestionRequest) tea.Cmd {
 	}
 }
 
+// BuildPromptSuggestionRequest builds the generic hint that predicts the human's
+// next input. Needs some conversation to go on; the autopilot mission hint is
+// built by the caller (see model.missionSuggestionRequest).
 func BuildPromptSuggestionRequest(deps PromptSuggestionDeps) (PromptSuggestionRequest, bool) {
 	if !deps.HasProvider {
 		return PromptSuggestionRequest{}, false
@@ -108,12 +130,7 @@ func BuildPromptSuggestionRequest(deps PromptSuggestionDeps) (PromptSuggestionRe
 	if assistantCount < 2 {
 		return PromptSuggestionRequest{}, false
 	}
-
-	startIdx := 0
-	if len(deps.Conversation.Messages) > maxSuggestionMessages {
-		startIdx = len(deps.Conversation.Messages) - maxSuggestionMessages
-	}
-	msgs := deps.Conversation.ConvertToProviderFrom(startIdx)
+	msgs := RecentSuggestionMessages(deps.Conversation)
 	msgs = append(msgs, core.Message{Role: core.RoleUser, Content: SuggestionUserPrompt})
 
 	return PromptSuggestionRequest{

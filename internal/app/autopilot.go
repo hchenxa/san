@@ -93,26 +93,42 @@ func (m *model) autopilotEngaged() bool {
 var (
 	autopilotHintMark = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Warning)
 	autopilotHintDim  = lipgloss.NewStyle().Foreground(kit.CurrentTheme.TextDim)
+	autopilotDoneMark = lipgloss.NewStyle().Foreground(kit.CurrentTheme.Success)
 )
 
-// autopilotHint formats a concise copilot notice: an amber "⏵ autopilot" mark
-// (the same brand as the mode indicator) plus a dimmed detail. It states only
-// what the copilot did — never the instruction itself, which reads back as the
-// submitted message — so the transcript looks like a human driving the session,
-// echoing the terse inline review-decision hints rather than a verbose insert.
+// autopilotHint formats a plain amber "⏵ autopilot · <detail>" notice — the
+// neutral copilot mark (same brand as the mode indicator). Used for the one-off
+// "start failed" message; the handback / action / mission-done notices below
+// carry their own arrow + colour.
 func autopilotHint(detail string) string {
 	return autopilotHintMark.Render("⏵ autopilot") + autopilotHintDim.Render(" · "+detail)
 }
 
-// settleAutopilotHint resolves the pending "thinking…" notice into its outcome
-// on the same line — falling back to a fresh notice if that line already
-// flushed to scrollback — so the copilot's deliberation and its decision read
-// as one line instead of two.
-func (m *model) settleAutopilotHint(detail string) {
-	hint := autopilotHint(detail)
-	if !m.conv.SetLastNotice(hint) {
-		m.conv.AddNotice(hint)
+// autopilotHandback is the notice shown when the copilot returns control to the
+// human — it stops mid-mission (needs a decision, or spent its continuation
+// budget), so the arrow curves back to the user rather than driving forward.
+// A non-empty detail (e.g. the decide error) rides dimmed after it.
+func autopilotHandback(detail string) string {
+	s := autopilotHintMark.Render("↩ autopilot") + autopilotHintDim.Render(" · over to you")
+	if detail != "" {
+		s += autopilotHintDim.Render(" · " + detail)
 	}
+	return s
+}
+
+// autopilotAction is the green notice for something the copilot handled itself
+// (answered a question for you) — green = it kept the session moving, matching
+// the ↖ continuation mark and the auto-approved decision hint.
+func autopilotAction(detail string) string {
+	return autopilotDoneMark.Render("⏵ autopilot") + autopilotHintDim.Render(" · "+detail)
+}
+
+// autopilotMissionDone is the green notice shown when the copilot judges the
+// mission fully accomplished — a success terminal, distinct from the amber
+// handback. AutoPilot stays on (retireAutopilotMission drops to the passive
+// baseline), so the human keeps the auto-approve safety net.
+func autopilotMissionDone() string {
+	return autopilotDoneMark.Render("✓ autopilot") + autopilotHintDim.Render(" · mission complete")
 }
 
 // marshalAutoPilot encodes the live config for session persistence, returning
@@ -182,7 +198,9 @@ func (m *model) missionReply(ctx context.Context, history []input.MissionMessage
 // to the UI goroutine.
 type autopilotDecisionMsg struct {
 	result      core.Result
+	kick        bool // opened the mission (no prior turn) vs continued a finished one
 	cont        bool
+	done        bool
 	instruction string
 	err         error
 }
@@ -190,10 +208,14 @@ type autopilotDecisionMsg struct {
 const continueDecisionTask = `The agent just finished a turn and is about to hand control back to the human. Decide whether to keep it going toward the mission.
 
 Reply with ONLY a JSON object:
-{"continue": true|false, "instruction": "the next thing to tell the agent"}
+{"continue": true|false, "done": true|false, "instruction": "the next thing to tell the agent"}
 
-Set continue=true only if the mission is clearly not yet complete AND there is a concrete, safe next step you can direct. The instruction is a short, direct imperative — exactly what you'd type to the agent as the next message.
-Set continue=false (with instruction "") if the mission looks complete, if you are unsure, if it needs a human decision, or if the agent is blocked or asking for input. When in doubt, stop.`
+- continue=true (with a short, direct instruction — exactly what you'd type to the agent next) only if the mission is clearly not yet complete AND there is a concrete, safe next step you can direct.
+- done=true (continue=false, instruction "") only if the mission is fully accomplished — nothing meaningful is left to do.
+- continue=false, done=false (instruction "") if you are stopping but the mission is NOT complete: you are unsure, it needs a human decision, or the agent is blocked or asking for input.
+When in doubt, stop (continue=false, done=false).
+
+Judge what is already accomplished from the whole session transcript below, not the last turn alone — do not re-issue a step the transcript shows is already done.`
 
 // autopilotContinueCmd asks the copilot whether to auto-continue the finished
 // turn. It returns nil (letting the turn go idle normally) when AutoPilot mode
@@ -205,9 +227,40 @@ func (m *model) autopilotContinueCmd(result core.Result) tea.Cmd {
 		return nil
 	}
 	if m.autopilotContinuations >= ar.ResolvedMaxContinuations() {
-		m.conv.AddNotice(autopilotHint(fmt.Sprintf("budget reached (%d) · handing back", ar.ResolvedMaxContinuations())))
+		m.conv.AddNotice(autopilotHandback("")) // spent the budget; the ↖ N/N above says why
 		return nil
 	}
+	return m.autopilotDecideCmd(result, false)
+}
+
+// autopilotKickCmd opens the mission when the human hasn't: on entering AutoPilot
+// with the TurnStart steer on, a mission set, and the agent idle, it derives the
+// first step from the mission (the same decision as TurnEnd, just an empty-ish
+// transcript) and submits it — so briefing a mission and switching autopilot on
+// is enough to start, with no opening turn to type. Returns nil when any
+// precondition is unmet, the human is mid-compose (don't clobber input), or a
+// decision is already in flight (don't stack on rapid mode cycling).
+func (m *model) autopilotKickCmd() tea.Cmd {
+	ar := m.env.AutoPilot
+	if !m.autopilotEngaged() || !ar.Steers.TurnStart || m.autopilotDeciding {
+		return nil
+	}
+	if m.conv.Stream.Active || strings.TrimSpace(m.userInput.FullValue()) != "" {
+		return nil
+	}
+	if m.autopilotContinuations >= ar.ResolvedMaxContinuations() {
+		return nil
+	}
+	return m.autopilotDecideCmd(core.Result{}, true)
+}
+
+// autopilotDecideCmd is the shared tail of the TurnEnd continuation and the Start
+// kick: it resolves the mission/model, renders the recent transcript, marks the
+// mode line "thinking…", and fires the async continue/done decision. The callers
+// own their distinct gates (steer toggle, budget notice, mid-compose check);
+// this owns the one decision pipeline so the two can't drift apart.
+func (m *model) autopilotDecideCmd(result core.Result, kick bool) tea.Cmd {
+	ar := m.env.AutoPilot
 	mission := strings.TrimSpace(ar.Mission)
 	if mission == "" {
 		return nil // no mission to steer toward
@@ -216,50 +269,131 @@ func (m *model) autopilotContinueCmd(result core.Result) tea.Cmd {
 	if provider == nil {
 		return nil
 	}
-	last := core.LastAssistantChatContent(m.conv.Messages)
+	transcript := autopilotRecentTranscript(m.conv.Messages, 3000)
 	systemPrompt := m.autopilotSystemPrompt()
-	m.conv.AddNotice(autopilotHint("thinking…"))
+	m.autopilotDeciding = true // shown on the mode indicator, not a transcript line
 	return autopilotAsync(func(ctx context.Context) tea.Msg {
-		cont, instruction, err := autopilotDecideContinue(ctx, provider, modelID, systemPrompt, mission, last)
-		return autopilotDecisionMsg{result: result, cont: cont, instruction: instruction, err: err}
+		cont, done, instruction, err := autopilotDecideContinue(ctx, provider, modelID, systemPrompt, mission, transcript)
+		return autopilotDecisionMsg{result: result, kick: kick, cont: cont, done: done, instruction: instruction, err: err}
 	})
 }
 
-func autopilotDecideContinue(ctx context.Context, provider llm.Provider, modelID, systemPrompt, mission, lastTurn string) (bool, string, error) {
-	user := continueDecisionTask + "\n\nMission:\n" + mission + "\n\nThe agent's last turn ended with:\n" + kit.TruncateText(lastTurn, 2000)
+// autopilotRecentTranscript renders the recent human/agent turns as a compact
+// "you:/agent:" transcript for the turn-end decision, so the copilot judges
+// mission progress across the whole run — not from the last turn alone (which
+// can't tell it an earlier step is already done). Walks back from the newest
+// message within a character budget, then returns the kept turns oldest-first;
+// tool-result and compact-summary rows are skipped.
+func autopilotRecentTranscript(messages []core.ChatMessage, budget int) string {
+	var lines []string
+	used := 0
+	for i := len(messages) - 1; i >= 0 && used < budget; i-- {
+		msg := messages[i]
+		var label string
+		switch {
+		case msg.Role == core.RoleUser && msg.ToolResult == nil && !core.IsCompactSummary(msg.Content):
+			label = "you"
+		case msg.Role == core.RoleAssistant:
+			label = "agent"
+		default:
+			continue
+		}
+		text := strings.TrimSpace(msg.Content)
+		if text == "" {
+			continue
+		}
+		line := label + ": " + kit.TruncateText(text, 600)
+		lines = append(lines, line)
+		used += len(line)
+	}
+	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+		lines[i], lines[j] = lines[j], lines[i] // oldest-first, so it reads top-to-bottom
+	}
+	return strings.Join(lines, "\n")
+}
+
+func autopilotDecideContinue(ctx context.Context, provider llm.Provider, modelID, systemPrompt, mission, transcript string) (cont, done bool, instruction string, err error) {
+	user := continueDecisionTask + "\n\nMission:\n" + mission + "\n\nSession so far (recent turns, oldest first):\n" + transcript
 	content, err := autopilotComplete(ctx, provider, modelID, systemPrompt, user, 400)
 	if err != nil {
-		return false, "", err
+		return false, false, "", err
 	}
 	var out struct {
 		Continue    bool   `json:"continue"`
+		Done        bool   `json:"done"`
 		Instruction string `json:"instruction"`
 	}
 	if err := json.Unmarshal([]byte(reviewer.ExtractJSONObject(content)), &out); err != nil {
-		return false, "", err
+		return false, false, "", err
 	}
-	return out.Continue, strings.TrimSpace(out.Instruction), nil
+	return out.Continue, out.Done, strings.TrimSpace(out.Instruction), nil
 }
 
-// handleAutopilotDecision acts on the copilot's turn-end verdict: on continue it
-// "types" the instruction into the composer and submits it (visible, budgeted);
-// on stop it fires the idle hooks OnTurnEnd deferred while the decision ran.
+// handleAutopilotDecision acts on the copilot's turn-end or kick verdict: on
+// continue it "types" the instruction into the composer and submits it (visible,
+// budgeted); on done it retires the mission; otherwise it hands back. A kick (no
+// prior turn) fires no idle hooks and stays quiet when it finds nothing to open.
 func (m *model) handleAutopilotDecision(msg autopilotDecisionMsg) tea.Cmd {
-	// The human may have started a turn while the decision was in flight; if so,
-	// stand down entirely.
-	if m.conv.Stream.Active {
+	m.autopilotDeciding = false // the "thinking…" indicator clears here
+	// A turn is already in flight (a new stream, or a compaction mid-apply) — the
+	// running turn owns the lifecycle, so drop this stale decision silently.
+	if m.conv.Stream.Active || m.conv.Compact.Active {
 		return nil
+	}
+	// The human took over while we were deciding — left AutoPilot, or started
+	// typing their own next message. Don't act (and never clobber their draft);
+	// hand the finished turn back to them by firing the idle hooks OnTurnEnd
+	// deferred to us (a kick had no prior turn, so it has none to fire).
+	if !m.autopilotEngaged() || strings.TrimSpace(m.userInput.FullValue()) != "" {
+		if msg.kick {
+			return nil
+		}
+		return m.fireIdleHooksCmd(msg.result)
 	}
 	if msg.err == nil && msg.cont && msg.instruction != "" {
 		m.autopilotContinuations++
 		m.autopilotContinuing = true
-		m.settleAutopilotHint(fmt.Sprintf("continuing (%d/%d)",
-			m.autopilotContinuations, m.env.AutoPilot.ResolvedMaxContinuations()))
 		m.userInput.Textarea.SetValue(msg.instruction) // visible: the copilot "types" it, then it reads back as the submitted message
 		return m.handleSubmit()
 	}
-	m.settleAutopilotHint("handing back")
+	if msg.err == nil && msg.done {
+		m.conv.AddNotice(autopilotMissionDone())
+		m.retireAutopilotMission()
+		if msg.kick {
+			return nil
+		}
+		return m.fireIdleHooksCmd(msg.result)
+	}
+	// Stopped without completing: hand back, surfacing a decide error so a
+	// misconfigured model doesn't read as a silent "chose to stop". A kick that
+	// found nothing to open stays quiet — it never took over, so there's nothing
+	// to hand back — but a kick that *errored* says so.
+	if msg.kick {
+		if msg.err != nil {
+			m.conv.AddNotice(autopilotHint("start failed · " + kit.TruncateText(msg.err.Error(), 120)))
+		}
+		return nil
+	}
+	detail := ""
+	if msg.err != nil {
+		detail = kit.TruncateText(msg.err.Error(), 120)
+	}
+	m.conv.AddNotice(autopilotHandback(detail))
 	return m.fireIdleHooksCmd(msg.result)
+}
+
+// retireAutopilotMission winds down a finished mission without leaving AutoPilot:
+// it clears the mission and turns off the driving steers (Suggest, TurnStart,
+// Question, TurnEnd), so the copilot stops actively driving — no more suggest,
+// rewrite, auto-answer, or continue — while the passive safety steers stay
+// exactly as the user configured them (a Bash steer they left off is NOT flipped
+// on, an explicit permission:false is NOT overridden). Session-scoped: the saved
+// settings.json config (the user's template) is left untouched.
+func (m *model) retireAutopilotMission() {
+	m.env.AutoPilot.Mission = ""
+	s := &m.env.AutoPilot.Steers
+	s.Suggest, s.TurnStart, s.Question, s.TurnEnd = false, false, false, false
+	m.rebuildAutopilotReviewer()
 }
 
 // autopilotComplete runs one single-user-message completion and returns the
@@ -396,7 +530,8 @@ Return ONLY the rewritten message, with no preamble, quotes, or explanation. If 
 // TurnStart steer are on, returning (cmd, true) to rewrite it asynchronously
 // before sending. It returns (nil, false) — proceed normally — for the re-submit
 // of an already rewritten message, copilot continuations, slash commands, and
-// empty input.
+// empty input. While a rewrite is already in flight it swallows the submission
+// (nil, true) so a second Enter can't launch a second rewrite / double-submit.
 func (m *model) autopilotRewriteCmd(userMessage string) (tea.Cmd, bool) {
 	if m.autopilotRewrote {
 		m.autopilotRewrote = false // this IS the rewritten re-submit
@@ -405,6 +540,9 @@ func (m *model) autopilotRewriteCmd(userMessage string) (tea.Cmd, bool) {
 	ar := m.env.AutoPilot
 	if !m.autopilotEngaged() || !ar.Steers.TurnStart || m.autopilotContinuing {
 		return nil, false
+	}
+	if m.autopilotRewriting {
+		return nil, true // a rewrite is in flight; it will submit — swallow this Enter
 	}
 	userMessage = strings.TrimSpace(userMessage)
 	if userMessage == "" || strings.HasPrefix(userMessage, "/") {
@@ -416,6 +554,8 @@ func (m *model) autopilotRewriteCmd(userMessage string) (tea.Cmd, bool) {
 	}
 	mission := strings.TrimSpace(ar.Mission)
 	systemPrompt := m.autopilotSystemPrompt()
+	m.autopilotRewriting = true
+	m.autopilotDeciding = true // rewrite in flight — "thinking…" on the mode line
 	return autopilotAsync(func(ctx context.Context) tea.Msg {
 		return autopilotRewriteMsg{original: userMessage, rewritten: autopilotRewriteInput(ctx, provider, modelID, systemPrompt, mission, userMessage)}
 	}), true
@@ -433,15 +573,19 @@ func autopilotRewriteInput(ctx context.Context, provider llm.Provider, modelID, 
 	return out
 }
 
-// handleAutopilotRewrite re-submits the (possibly) rewritten message.
+// handleAutopilotRewrite re-submits the (possibly) rewritten message. When the
+// rewrite changed the text, the re-submitted message wears the "↖ autopilot ·
+// refined" annotation (via autopilotRefined → dispatchSubmission) instead of a
+// separate notice. The message must never be lost, so this submits even if the
+// user left AutoPilot while the rewrite ran.
 func (m *model) handleAutopilotRewrite(msg autopilotRewriteMsg) tea.Cmd {
+	m.autopilotDeciding = false
+	m.autopilotRewriting = false
 	text := msg.rewritten
 	if text == "" {
 		text = msg.original
 	}
-	if text != msg.original {
-		m.conv.AddNotice(autopilotHint("refined your request"))
-	}
+	m.autopilotRefined = text != msg.original
 	m.autopilotRewrote = true
 	m.userInput.Textarea.SetValue(text)
 	return m.handleSubmit()
@@ -471,12 +615,18 @@ func (m *model) handleAutopilotQuestion(msg autopilotQuestionMsg) tea.Cmd {
 	if m.conv.Modal.PendingQuestion != msg.req || m.conv.Modal.PendingQuestionReply == nil {
 		return nil
 	}
+	// The human may have left AutoPilot (or turned the Question steer off) while
+	// the answer inference ran — precisely to answer it themselves. If so, leave
+	// the modal up for them.
+	if !m.autopilotEngaged() || !m.env.AutoPilot.Steers.Question {
+		return nil
+	}
 	if !msg.answer || len(msg.answers) == 0 {
-		m.conv.AddNotice(autopilotHint("left this question for you"))
+		m.conv.AddNotice(autopilotHandback("this question is yours"))
 		return nil
 	}
 	m.conv.Modal.Question.Hide()
-	m.conv.AddNotice(autopilotHint("answered for you"))
+	m.conv.AddNotice(autopilotAction("answered for you"))
 	return m.handleQuestionResponse(conv.QuestionResponseMsg{
 		Request:  msg.req,
 		Response: &tool.QuestionResponse{RequestID: msg.req.ID, Answers: msg.answers},

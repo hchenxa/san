@@ -265,6 +265,21 @@ func (m *env) SessionMode() string {
 	}
 }
 
+// parseSessionMode maps a persisted session mode back to the OperationMode a
+// resumed session restores into, reusing the canonical string parser but folding
+// everything except the two elevated cycle modes to Normal — so a resumed (or
+// hand-edited) session can never silently regain bypass / dont-ask.
+func parseSessionMode(mode string) setting.OperationMode {
+	switch setting.OperationModeFromString(mode) {
+	case setting.ModeAutoAccept:
+		return setting.ModeAutoAccept
+	case setting.ModeAutoPilot:
+		return setting.ModeAutoPilot
+	default:
+		return setting.ModeNormal
+	}
+}
+
 // ResetContextDisplay zeroes the bottom-right context-window readout (latest
 // input/output tokens). Called per-compaction: the live context shrinks to the
 // summary, so the bar/label restart from empty until the next infer. The
