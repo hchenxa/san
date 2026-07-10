@@ -49,11 +49,25 @@ func (m *model) rebuildAutopilotReviewer() {
 	m.autopilot.Store(&autopilotRuntime{judge: rev, cfg: ar.Clone()})
 }
 
+// refreshAutopilotSnapshot republishes the runtime snapshot with the live config
+// but the SAME judge — for when a field the agent goroutine reads live from the
+// snapshot (the mission, now given to the Permission/Bash judge as intent) has
+// changed without touching what the judge is built from (model / system prompt /
+// steers). Cheaper than rebuildAutopilotReviewer, which would rebuild the judge
+// and re-read the system-prompt file for nothing.
+func (m *model) refreshAutopilotSnapshot() {
+	rt := m.autopilot.Load()
+	if rt == nil {
+		return
+	}
+	m.autopilot.Store(&autopilotRuntime{judge: rt.judge, cfg: m.env.AutoPilot.Clone()})
+}
+
 // autopilotSystemPrompt resolves the copilot's shared "how it drives" system
-// prompt — the general steering preamble the judge AND every app-side steer
-// (rewrite / continue / question) preface their per-call task with, so all five
-// speak with one configured voice. An inline SystemPrompt wins, then a readable
-// SystemPromptFile, then the built-in default.
+// prompt — the steering persona every LLM steer prefaces its per-call task with
+// (the Permission and Bash judges, plus the app-side Suggest, continue, and
+// Question steers), so all five speak with one configured voice. An inline
+// SystemPrompt wins, then a readable SystemPromptFile, then the built-in default.
 func (m *model) autopilotSystemPrompt() string {
 	ar := m.env.AutoPilot
 	if s := strings.TrimSpace(ar.SystemPrompt); s != "" {
@@ -117,7 +131,7 @@ func autopilotHandback(detail string) string {
 
 // autopilotAction is the green notice for something the copilot handled itself
 // (answered a question for you) — green = it kept the session moving, matching
-// the ↖ continuation mark and the auto-approved decision hint.
+// the ⎿ continuation mark and the auto-approved decision hint.
 func autopilotAction(detail string) string {
 	return autopilotDoneMark.Render("⏵ autopilot") + autopilotHintDim.Render(" · "+detail)
 }
@@ -153,30 +167,48 @@ func parseAutoPilot(s string) setting.AutoPilotSettings {
 	return a
 }
 
-// autopilotWithoutMission returns the config with its mission cleared — the copy
-// written to settings.json as the default for new sessions. A mission is a
-// one-off task that belongs to this session (it persists with the transcript and
-// restores on /resume), not a global default every new session should inherit.
-func autopilotWithoutMission(cfg setting.AutoPilotSettings) setting.AutoPilotSettings {
+// autopilotWithoutSessionFields returns the config with its per-session fields
+// cleared — the copy written to settings.json as the default for new sessions.
+// The mission and the inline system prompt belong to the session that set them:
+// both ride the transcript and restore on /resume, so editing either in one
+// session must never change the default the next session inherits. New sessions
+// fall back to the built-in system prompt; a custom prompt or mission travels to
+// another session only via export/import. (SystemPromptFile is left intact — the
+// panel never sets it; it is the explicit settings.json hook for a persistent
+// custom default.)
+func autopilotWithoutSessionFields(cfg setting.AutoPilotSettings) setting.AutoPilotSettings {
 	shared := cfg.Clone()
 	shared.Mission = ""
+	shared.SystemPrompt = ""
 	return shared
 }
 
-// persistAutopilotDefault hot-swaps the running judge from m.env.AutoPilot and
-// writes that config — minus the per-session mission — to settings.json as the
-// default for new sessions. Shared tail of the panel Save/Start and the Mission
-// editor's save/clear; callers set m.env.AutoPilot first.
-func (m *model) persistAutopilotDefault() {
-	m.rebuildAutopilotReviewer()
-	if err := setting.UpdateAutoPilotAt(autopilotWithoutMission(m.env.AutoPilot), true); err != nil {
+// writeAutopilotDefault writes the live config — minus the per-session fields
+// (mission and inline system prompt) — to settings.json as the default for new
+// sessions. Those ride the transcript, never settings.json, so stripping them
+// here also flushes any a settings file might still carry. Callers set
+// m.env.AutoPilot first.
+func (m *model) writeAutopilotDefault() {
+	if err := setting.UpdateAutoPilotAt(autopilotWithoutSessionFields(m.env.AutoPilot), true); err != nil {
 		log.Logger().Warn("persist autopilot default failed", zap.Error(err))
 	}
 }
 
+// persistAutopilotDefault hot-swaps the running judge from m.env.AutoPilot and
+// writes the new-session default. Shared tail of the panel Save/Start, which
+// change the model / system prompt / steers the judge is built from; callers set
+// m.env.AutoPilot first. A mission-only change skips this — the judge and safety
+// steers never read the mission — and calls writeAutopilotDefault directly.
+func (m *model) persistAutopilotDefault() {
+	m.rebuildAutopilotReviewer()
+	m.writeAutopilotDefault()
+}
+
 // missionRefinePrompt drives the /autopilot Mission editor's ctrl+r action: it
-// rewrites the user's draft into a cleaner mission. The reply IS the mission, so
-// the prompt forbids any preamble or commentary.
+// rewrites the user's draft into a cleaner mission. This authors mission text
+// rather than steering the session, so — unlike the five steers — it runs on its
+// own prompt, not the shared steering persona. The reply IS the mission, so the
+// prompt forbids any preamble or commentary.
 const missionRefinePrompt = `You are helping the user craft the mission for an autonomous coding session — the single directive the autopilot copilot will steer toward.
 
 Rewrite the user's mission draft into a clearer, more complete, self-contained directive: keep their intent and every specific they included, tighten and structure it, and add nothing they did not ask for. If it is already clear, return it largely unchanged.
@@ -239,7 +271,7 @@ func (m *model) autopilotContinueCmd(result core.Result) tea.Cmd {
 		return nil
 	}
 	if m.autopilotContinuations >= ar.ResolvedMaxContinuations() {
-		m.conv.AddNotice(autopilotHandback("")) // spent the budget; the ↖ N/N above says why
+		m.conv.AddNotice(autopilotHandback("")) // spent the budget; the ⎿ N/N above says why
 		return nil
 	}
 	return m.autopilotDecideCmd(result, false)

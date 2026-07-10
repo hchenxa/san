@@ -32,9 +32,11 @@ Steer 是按需组合的开关,按自主程度从低到高排列。AutoPilot 模
 
 Mission 是副驾本会话要开往的目标 —— 在 `/autopilot` 面板的 Mission 对话框里
 撰写:这是个小编辑器,你打的字就是 mission(`enter` 保存、`alt+enter` 换行、
-可粘贴),`ctrl+r` 让副驾就地精炼草稿、`ctrl+c` 清空、`esc` 保存并退出。推进类
-steer(Suggest、Question、End)读它;安全类 steer(Permission、Bash)刻意对它
-不可见,使动作风险的判断独立于意图。
+可粘贴),`ctrl+r` 让副驾就地精炼草稿、`ctrl+c` 清空、`esc` 保存并退出。每个
+steer 都读它:推进类 steer(Suggest、Question、End)朝它开;安全类 steer
+(Permission、Bash)把它当作意图上下文 —— 明显在推进 mission 的调用或提示,会被
+看作预期内的常规活儿。但意图不凌驾于安全:凡是不可逆、破坏性、越出项目、或会外泄
+数据的动作,无论是否契合 mission,一律仍升级给你。
 
 当 End steer 判定 mission **已完全达成**,会将其退役:清空 mission、steer 归位
 到被动基线(Permission + Bash)—— AutoPilot 保持开启,你重新接手,自动放行的
@@ -84,11 +86,11 @@ mkdir /tmp/autopilot-demo && cd /tmp/autopilot-demo && san
 
 ```
 ❭ Create notes/todo.md with a 3-item checklist.
-  ↖ autopilot · 1/20
+  ⎿  autopilot · 1/20
 ● Write(notes/todo.md)
   ⎿  Write → 5 lines
 ❭ Create an empty notes/done.md.
-  ↖ autopilot · 2/20
+  ⎿  autopilot · 2/20
 ...
 ● Bash(ls notes/)
   ↳ auto-approved · read-only directory listing
@@ -96,7 +98,7 @@ mkdir /tmp/autopilot-demo && cd /tmp/autopilot-demo && san
   ✓ autopilot · mission complete
 ```
 
-整个运行里的每个 `❭` 都带绿色 `↖ autopilot` 标记 —— 包括开场那条,全部由
+整个运行里的每个 `❭` 都带绿色 `⎿ autopilot` 标记 —— 包括开场那条,全部由
 copilot 敲入,你没有碰过输入框。那条 `ls` 是灰区调用,由 Permission steer
 就地放行。出现
 `✓ mission complete` 时,mission 被清空、steer 归位到被动基线(打开
@@ -109,7 +111,7 @@ copilot 敲入,你没有碰过输入框。那条 `ls` 是灰区调用,由 Permis
 
 | 标记 | 含义 |
 |---|---|
-| 绿 `↖ autopilot · 2/5` | 上方那条 `❭` 是副驾敲的(第 2 / 共 5 次续跑) |
+| 绿 `⎿ autopilot · 2/5` | 上方那条 `❭` 是副驾敲的(第 2 / 共 5 次续跑) |
 | 绿 `↳ auto-approved · <理由>` | 判官放行了上方的工具调用 |
 | 琥珀 `↳ escalated · <理由>` | 判官把调用退回给你 |
 | 绿 `⏵ autopilot · answered for you` | 副驾替你回答了 `AskUserQuestion` |
@@ -122,16 +124,18 @@ copilot 敲入,你没有碰过输入框。那条 `ls` 是灰区调用,由 Permis
 
 ## 配置
 
-面板编辑的是本会话的实时配置,保存后写入 `settings.json` 作为新会话的默认种子。
-会话自身的配置与模式也随转录持久化,`/resume` 时恢复。
+面板编辑的是本会话的实时配置。model、steer、续跑上限保存进 `settings.json`,作为
+新会话的默认值。**system prompt** 和 **mission** 则按会话走:它们随转录持久化、
+`/resume` 时恢复,但不会被写成默认值 —— 新会话从内置 prompt、无 mission 起步。要把
+自定义的 prompt 或 mission 带到另一个会话,导出成预设再在那边导入。
 
 ```jsonc
 {
   "autoPilot": {
     "model": "anthropic/claude-haiku-4-5", // steer 判定用的模型;留空用会话模型
-    "systemPrompt": "…",                   // “怎么开” —— 全部 steer 共用
-    "systemPromptFile": "~/prompts/pilot.md", // systemPrompt 为空时生效
-    "mission": "…",                        // 通常在面板里按会话设置
+    "systemPrompt": "…",                   // “怎么开”;按会话走,面板不会写到这里
+    "systemPromptFile": "~/prompts/pilot.md", // 持久的自定义默认;systemPrompt 为空时生效
+    "mission": "…",                        // 按会话;在面板里设置
     "maxContinuations": 20,
     "steers": {
       "suggest": true,
@@ -145,8 +149,8 @@ copilot 敲入,你没有碰过输入框。那条 `ls` 是灰区调用,由 Permis
 }
 ```
 
-命名预设:在 `/autopilot` 菜单里,`e` 导出当前配置、`i` 导入,存取于
-`~/.san/autopilot/<name>.json`。
+命名预设打包整份副驾配置 —— system prompt、mission 和 steer。在 `/autopilot`
+菜单里,`e` 导出当前配置、`i` 导入,存取于 `~/.san/autopilot/<name>.json`。
 
 ## 关联
 

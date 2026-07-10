@@ -36,9 +36,11 @@ The mission is what the copilot drives toward this session — written in the
 `/autopilot` panel's Mission dialog, a small editor: the text you type is the
 mission (`enter` saves it, `alt+enter` for a newline; paste works), `ctrl+r` asks
 the copilot to refine the draft in place, `ctrl+c` clears it, and `esc` saves and
-leaves. The steering steers (Suggest, Question, End) read it; the safety steers
-(Permission, Bash) deliberately never see it, so an action's risk is judged
-independently of intent.
+leaves. Every steer reads it: the steering steers (Suggest, Question, End) drive
+toward it, and the safety steers (Permission, Bash) take it as intent context — a
+tool call or prompt that plainly advances the mission reads as expected, routine
+work. Intent never overrides safety, though: they still escalate anything
+irreversible, destructive, out-of-project, or data-leaking, mission or not.
 
 When the End steer decides the mission is **fully accomplished**, it retires
 it: the mission is cleared and the steers reset to the passive baseline
@@ -93,11 +95,11 @@ with a mission set, derives the opening step and submits it itself.
 
 ```
 ❭ Create notes/todo.md with a 3-item checklist.
-  ↖ autopilot · 1/20
+  ⎿  autopilot · 1/20
 ● Write(notes/todo.md)
   ⎿  Write → 5 lines
 ❭ Create an empty notes/done.md.
-  ↖ autopilot · 2/20
+  ⎿  autopilot · 2/20
 ...
 ● Bash(ls notes/)
   ↳ auto-approved · read-only directory listing
@@ -105,7 +107,7 @@ with a mission set, derives the opening step and submits it itself.
   ✓ autopilot · mission complete
 ```
 
-Every `❭` in the run carries the green `↖ autopilot` mark — the copilot typed
+Every `❭` in the run carries the green `⎿ autopilot` mark — the copilot typed
 them all, opening step included; you never touched the composer. The `ls` is a
 gray-zone call the Permission steer approved inline. On `✓ mission complete` the mission is cleared and the steers drop back
 to the passive baseline — open `/autopilot` to confirm — while AutoPilot stays
@@ -119,7 +121,7 @@ composer and you accept with `tab` + `enter`.
 
 | Mark | Meaning |
 |---|---|
-| green `↖ autopilot · 2/5` | the `❭` line above was typed by the copilot (continuation 2 of 5) |
+| green `⎿ autopilot · 2/5` | the `❭` line above was typed by the copilot (continuation 2 of 5) |
 | green `↳ auto-approved · <reason>` | the permission judge let the tool call above through |
 | amber `↳ escalated · <reason>` | the judge sent the call back to you |
 | green `⏵ autopilot · answered for you` | the copilot answered an `AskUserQuestion` |
@@ -132,17 +134,20 @@ approvals tally there too (`· 3 approved · 1 escalated`).
 
 ## Configuration
 
-The panel edits the live session config and saves it to `settings.json` as the
-default seed for new sessions. The session's config and mode also persist with
-the transcript and restore on `/resume`.
+The panel edits the live session config. The model, steers, and continuation cap
+are saved to `settings.json` as the default for new sessions. The **system
+prompt** and **mission** are per-session: they ride the transcript and restore on
+`/resume`, but are never written as the default — a new session starts from the
+built-in prompt with no mission. To carry a custom prompt or mission to another
+session, export it as a preset and import it there.
 
 ```jsonc
 {
   "autoPilot": {
     "model": "anthropic/claude-haiku-4-5", // steer decisions; empty = session model
-    "systemPrompt": "…",                   // "how it drives" — shared by all steers
-    "systemPromptFile": "~/prompts/pilot.md", // used when systemPrompt is empty
-    "mission": "…",                        // usually set via the panel, per session
+    "systemPrompt": "…",                   // "how it drives"; per-session, not written here by the panel
+    "systemPromptFile": "~/prompts/pilot.md", // persistent custom default; used when systemPrompt is empty
+    "mission": "…",                        // per-session; set via the panel
     "maxContinuations": 20,
     "steers": {
       "suggest": true,
@@ -156,8 +161,9 @@ the transcript and restore on `/resume`.
 }
 ```
 
-Named presets: in the `/autopilot` menu, `e` exports the current config and `i`
-imports one, stored under `~/.san/autopilot/<name>.json`.
+Named presets bundle the whole copilot config — system prompt, mission, and
+steers. In the `/autopilot` menu, `e` exports the current config and `i` imports
+one, stored under `~/.san/autopilot/<name>.json`.
 
 ## Relationship to other features
 
