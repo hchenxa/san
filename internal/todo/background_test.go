@@ -19,22 +19,56 @@ func TestTrackWorkerCreatesEntry(t *testing.T) {
 	Initialize(Options{})
 	t.Cleanup(func() { Default().Reset() })
 
-	TrackWorker(Default(), BackgroundTaskLaunch{
-		TaskID:      "bg-1",
+	TrackWorker(Default(), task.TaskInfo{
+		ID:          "bg-1",
+		Type:        task.TaskTypeAgent,
 		AgentName:   "dir-audit",
 		AgentType:   "Explore",
 		Description: "Directory structure audit",
 	})
 
-	tasks := Default().List()
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 tracker task, got %d", len(tasks))
+	items := Default().List()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 tracker item, got %d", len(items))
 	}
-	if tasks[0].Status != StatusInProgress {
-		t.Fatalf("status = %q, want %q", tasks[0].Status, StatusInProgress)
+	if items[0].Status != StatusInProgress {
+		t.Fatalf("status = %q, want %q", items[0].Status, StatusInProgress)
 	}
-	if metadataStr(tasks[0].Metadata, metaTaskID) != "bg-1" {
-		t.Fatalf("task ID metadata = %q", metadataStr(tasks[0].Metadata, metaTaskID))
+	if metadataStr(items[0].Metadata, metaTaskID) != "bg-1" {
+		t.Fatalf("item ID metadata = %q", metadataStr(items[0].Metadata, metaTaskID))
+	}
+}
+
+// A bash worker names no agent, so the subject falls back through description
+// to the command itself. CompleteWorker already fired for bash items before
+// they were tracked at all; now that both halves run, they need a readable row.
+func TestTrackWorkerNamesBashWorker(t *testing.T) {
+	Initialize(Options{})
+	t.Cleanup(func() { Default().Reset() })
+
+	TrackWorker(Default(), task.TaskInfo{
+		ID:      "bg-2",
+		Type:    task.TaskTypeBash,
+		Command: "go test ./...",
+	})
+
+	items := Default().List()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 tracker item, got %d", len(items))
+	}
+	if items[0].Subject != "go test ./..." {
+		t.Fatalf("subject = %q, want the command", items[0].Subject)
+	}
+}
+
+func TestTrackWorkerIgnoresTaskWithoutID(t *testing.T) {
+	Initialize(Options{})
+	t.Cleanup(func() { Default().Reset() })
+
+	TrackWorker(Default(), task.TaskInfo{Description: "no worker behind this"})
+
+	if items := Default().List(); len(items) != 0 {
+		t.Fatalf("expected no tracker item, got %d", len(items))
 	}
 }
 
@@ -42,8 +76,9 @@ func TestCompleteWorkerUpdatesStatus(t *testing.T) {
 	Initialize(Options{})
 	t.Cleanup(func() { Default().Reset() })
 
-	TrackWorker(Default(), BackgroundTaskLaunch{
-		TaskID:      "bg-1",
+	TrackWorker(Default(), task.TaskInfo{
+		ID:          "bg-1",
+		Type:        task.TaskTypeAgent,
 		AgentName:   "dir-audit",
 		AgentType:   "Explore",
 		Description: "Directory audit",
@@ -55,15 +90,15 @@ func TestCompleteWorkerUpdatesStatus(t *testing.T) {
 		Status: task.StatusCompleted,
 	})
 
-	tasks := Default().List()
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 tracker task, got %d", len(tasks))
+	items := Default().List()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 tracker item, got %d", len(items))
 	}
-	if tasks[0].Status != StatusCompleted {
-		t.Fatalf("status = %q, want %q", tasks[0].Status, StatusCompleted)
+	if items[0].Status != StatusCompleted {
+		t.Fatalf("status = %q, want %q", items[0].Status, StatusCompleted)
 	}
-	if metadataStr(tasks[0].Metadata, metaStatusDetail) != string(task.StatusCompleted) {
-		t.Fatalf("status detail = %q", metadataStr(tasks[0].Metadata, metaStatusDetail))
+	if metadataStr(items[0].Metadata, metaStatusDetail) != string(task.StatusCompleted) {
+		t.Fatalf("status detail = %q", metadataStr(items[0].Metadata, metaStatusDetail))
 	}
 }
 
@@ -71,8 +106,9 @@ func TestCompleteWorkerTracksFailure(t *testing.T) {
 	Initialize(Options{})
 	t.Cleanup(func() { Default().Reset() })
 
-	TrackWorker(Default(), BackgroundTaskLaunch{
-		TaskID:      "bg-1",
+	TrackWorker(Default(), task.TaskInfo{
+		ID:          "bg-1",
+		Type:        task.TaskTypeAgent,
 		AgentName:   "fix-auth",
 		AgentType:   "general-purpose",
 		Description: "Fix auth module",
@@ -85,8 +121,8 @@ func TestCompleteWorkerTracksFailure(t *testing.T) {
 		Error:  "compilation error",
 	})
 
-	tasks := Default().List()
-	if metadataStr(tasks[0].Metadata, metaStatusDetail) != string(task.StatusFailed) {
-		t.Fatalf("status detail = %q, want %q", metadataStr(tasks[0].Metadata, metaStatusDetail), task.StatusFailed)
+	items := Default().List()
+	if metadataStr(items[0].Metadata, metaStatusDetail) != string(task.StatusFailed) {
+		t.Fatalf("status detail = %q, want %q", metadataStr(items[0].Metadata, metaStatusDetail), task.StatusFailed)
 	}
 }
