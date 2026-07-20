@@ -206,9 +206,10 @@ func (m *model) buildAgentParams() agent.BuildParams {
 				return agent.PermReviewResult{}
 			}
 			cfg := m.liveAutopilotConfig()
-			// Defense in depth: no steer may approve a floored action, even if one
-			// somehow reaches here.
-			if r := setting.BypassImmuneReason(name, args); r != "" {
+			// Defense in depth: no steer may approve an unrecoverable action, even
+			// if one somehow reaches here. The recoverable git tier is deliberately
+			// not checked — weighing it is exactly what the judge is for.
+			if r := setting.UnrecoverableReason(name, args); r != "" {
 				m.recordDecision(ctx, false, r)
 				return agent.PermReviewResult{}
 			}
@@ -232,6 +233,7 @@ func (m *model) buildAgentParams() agent.BuildParams {
 			defer cancel()
 			verdict, err := rev.Permission(ctx, reviewer.Request{
 				ToolName: name, Args: args, Reason: reason, CWD: m.env.CWD, Mission: cfg.Mission,
+				UnderGit: m.env.IsGit,
 			})
 			log.Logger().Debug("auto-review verdict",
 				zap.String("tool", name),

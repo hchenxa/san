@@ -24,11 +24,11 @@ Autopilot mode is engaged.
 | Steer | Default | What it does |
 |---|---|---|
 | **Suggest** | off | Shows a next-step suggestion in the input box. When a mission is set, the suggestion follows the mission; otherwise it uses the generic input prediction. `tab` accepts the suggestion, and `enter` sends it. Suggest only fills the hint text and never submits on its own; when off, this hint is hidden. |
-| **Permission** | **on** | Auto-approves gray-zone tool calls the static rules couldn't resolve, judging reversibility, blast radius, and data exfiltration. Fails closed: any error escalates to you. |
+| **Permission** | **on** | Auto-approves gray-zone tool calls the static rules couldn't resolve, judging reversibility, blast radius, and data exfiltration. In a git working tree it counts history as the safety net: changes to tracked files are routine, and git's own sharp edges (`reset --hard`, `clean -f`, `stash drop`, force-push, `branch -D`) are weighed against the session's intent rather than blocked outright. It still escalates what leaves the tree — untracked files elsewhere, paths outside the project, a shared default branch. Fails closed: any error escalates to you. |
 | **Bash** | off | Answers an already-approved command's interactive prompt (`Continue? [Y/n]`) when the answer just continues the approved action; skips anything that would widen scope. |
 | **Skill** | off | Approves the copilot's skill loads outright, without the judge — a deliberate "trust skills" toggle, separate from Permission because the judge tends to escalate a skill load (it can run scripts). Off ⇒ skill loads fall to the Permission judge (or you). |
-| **Question** | off | Answers `AskUserQuestion` for you when the mission makes the choice clear and low-risk; defers to you otherwise. Option labels are validated verbatim — a partial or invented answer becomes a defer. |
-| **End** | off | After a finished turn, decides whether to continue toward the mission and types the next instruction itself. Bounded by **Continue at most N times** (default 20); the counter resets on every human turn. |
+| **Question** | off | Answers `AskUserQuestion` for you whenever the mission or the conversation makes a reasonable choice clear, preferring the conservative option over stalling the run. It defers only when the call is genuinely yours — irreversible, costly to get wrong, or a matter of your preference or judgement. Option labels are validated verbatim — a partial or invented answer becomes a defer. |
+| **End** | off | After a turn, decides whether to continue toward the mission and types the next instruction itself. Bounded by **Continue at most N times** (default 20, `0` = no limit); the counter resets on every human turn. With no mission briefed it infers the objective from the conversation, and stands down if the conversation shows none. |
 
 ## Mission
 
@@ -37,7 +37,8 @@ The mission is what the copilot drives toward this session — written in the
 mission (`enter` saves it, `alt+enter` for a newline; paste works), `ctrl+r` asks
 the copilot to refine the draft in place, `ctrl+c` clears it, and `esc` saves and
 leaves. Every steer reads it: the steering steers (Suggest, Question, End) drive
-toward it, and the safety steers (Permission, Bash) take it as intent context — a
+toward it — falling back to the conversation's own objective when none is
+briefed — and the safety steers (Permission, Bash) take it as intent context — a
 tool call or prompt that plainly advances the mission reads as expected, routine
 work. Intent never overrides safety, though: they still escalate anything
 irreversible, destructive, out-of-project, or data-leaking, mission or not.
@@ -63,6 +64,26 @@ pick, `enter` to run):
 Landing on Autopilot via `shift+tab` no longer auto-starts; it only surfaces the
 Suggest steer's proposal (if on). Kicking the mission is always the explicit
 Start button.
+
+## Staying autonomous
+
+With the End steer on, the copilot drives through the things that would
+otherwise park the session until you came back:
+
+- **A turn that stopped mid-work** — step limit, or output truncated beyond
+  recovery — is picked back up, with the copilot told how it ended. Your own
+  `esc` is different: a cancelled turn is you taking the helm. So is a stop hook.
+- **A turn that failed outright** gets a growing backoff (5s, 10s, 15s) and then
+  a resume decision, up to three consecutive attempts — reset by any turn that
+  reaches its end. An error that needs you still lands as a handback.
+- **A steer that misfired** retries up to three times, so a network blip or a
+  non-JSON reply doesn't end the mission.
+- **A compaction mid-decision** holds the verdict instead of dropping it.
+- **Running out of turns**: set **Continue at most** to `0` (shown as `∞`) and
+  the run ends when the mission is done, not when a counter expires.
+
+Uncapped runs pair well with a fast, cheap steer model — see
+[Configuration](#configuration).
 
 ## Demo: a hands-free scaffold
 
@@ -121,7 +142,8 @@ composer and you accept with `tab` + `enter`.
 
 | Mark | Meaning |
 |---|---|
-| green `⎿ autopilot · 2/5` | the `❭` line above was typed by the copilot (continuation 2 of 5) |
+| green `⎿ autopilot · 2/5` | the `❭` line above was typed by the copilot (continuation 2 of 5; uncapped runs show just `2`) |
+| amber `⏵ autopilot · turn failed · retrying in 5s` | a turn errored out; the copilot will decide whether to resume |
 | green `↳ auto-approved · <reason>` | the permission judge let the tool call above through |
 | amber `↳ escalated · <reason>` | the judge sent the call back to you |
 | green `⏵ autopilot · answered for you` | the copilot answered an `AskUserQuestion` |
@@ -156,7 +178,7 @@ steering-instructions portion.
     "systemPrompt": "…",                   // Steering Prompt; per-session, not written here by the panel
     "systemPromptFile": "~/prompts/pilot.md", // persistent steering default; used when systemPrompt is empty
     "mission": "…",                        // per-session; set via the panel
-    "maxContinuations": 20,
+    "maxContinuations": 20,                // -1 = uncapped (the panel writes this when you enter 0)
     "steers": {
       "suggest": true,
       "permission": true,  // omit for the default (on); false escalates everything
