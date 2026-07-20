@@ -248,14 +248,34 @@ func (l *Client) ModelID() string {
 	return l.model
 }
 
-// InputLimit returns the model's max input token capacity (context window),
-// or 0 if unknown. The provider lookup is memoized per model, so this is cheap
-// to call on every inference step (the compaction check does so).
+// InputLimit returns the model's context window, or 0 when it cannot be
+// determined — callers treat 0 as "unknown" and skip any size check rather
+// than acting on a guess (see InputLimitEnvVar).
+//
+// It reads the shared resolver (EffectiveInputLimit) rather than taking an
+// injected value, so every client resolves the window the same way the status
+// bar does without any construction site having to remember to pass it. The
+// store answers from memory; the live provider lookup behind it is memoized
+// per model, so this stays cheap enough for the per-inference-step compaction
+// check to call it.
 func (l *Client) InputLimit() int {
 	l.mu.RLock()
 	p := l.provider
 	model := l.model
 	l.mu.RUnlock()
+
+	// Both store methods are nil-receiver safe, and EffectiveInputLimit is
+	// called unconditionally so the env override it checks first is honored
+	// even before a store exists.
+	var provider Name
+	if p != nil {
+		provider = Name(p.Name())
+	}
+	store := Default().Store()
+	auth := store.ConnectionAuthMethod(provider)
+	if n := store.EffectiveInputLimit(provider, auth, model); n > 0 {
+		return n
+	}
 	return l.inLimit.get(p, model, inputLimitFromProvider)
 }
 

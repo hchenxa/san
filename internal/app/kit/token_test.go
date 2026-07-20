@@ -75,3 +75,54 @@ func TestGetModelTokenLimitsUsesConnectedAuthWhenCurrentAuthMissing(t *testing.T
 		}
 	}
 }
+
+// A model whose window San cannot discover resolves to 0, which the status bar
+// renders as "--". Inventing a figure would show a percentage of a guess and,
+// worse, have compaction act on it.
+func TestGetEffectiveInputLimitUnknownIsZero(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(llm.InputLimitEnvVar, "")
+	store, err := llm.NewStore()
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+
+	got := GetEffectiveInputLimit(store, &llm.CurrentModelInfo{
+		ModelID: "unknown-model", Provider: llm.OpenAI, AuthMethod: llm.AuthAPIKey,
+	})
+	if got != 0 {
+		t.Fatalf("GetEffectiveInputLimit() = %d, want 0 for an undiscoverable window", got)
+	}
+}
+
+// The env override wins over the cache, so a user can correct a provider that
+// under-reports its window.
+func TestGetEffectiveInputLimitEnvOverrideWins(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(llm.InputLimitEnvVar, "1000000")
+	store, err := llm.NewStore()
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := store.CacheModels(llm.OpenAI, llm.AuthAPIKey, []llm.ModelInfo{
+		{ID: "m", InputTokenLimit: 200000},
+	}); err != nil {
+		t.Fatalf("CacheModels: %v", err)
+	}
+
+	got := GetEffectiveInputLimit(store, &llm.CurrentModelInfo{
+		ModelID: "m", Provider: llm.OpenAI, AuthMethod: llm.AuthAPIKey,
+	})
+	if got != 1_000_000 {
+		t.Fatalf("GetEffectiveInputLimit() = %d, want the 1000000 override", got)
+	}
+}
+
+// No model selected is genuinely unknown, not a case for guessing — the status
+// bar renders 0 as "--" rather than a percentage against an invented window.
+func TestGetEffectiveInputLimitWithoutModelIsZero(t *testing.T) {
+	t.Setenv(llm.InputLimitEnvVar, "500000")
+	if got := GetEffectiveInputLimit(nil, nil); got != 0 {
+		t.Fatalf("GetEffectiveInputLimit(nil, nil) = %d, want 0", got)
+	}
+}

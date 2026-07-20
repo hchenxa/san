@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -140,17 +142,99 @@ func TestCompactEmitsStartBeforeBoundary(t *testing.T) {
 	}
 }
 
-func TestEstimatePromptTokensUsesConversationGrowth(t *testing.T) {
-	got := estimatePromptTokens(1000, 2000, 3000)
-	if got != 1500 {
-		t.Fatalf("estimatePromptTokens() = %d, want 1500", got)
+// Regression for #338: the compaction check must test the full prompt, not the
+// uncached delta InputTokens holds under prompt caching (see TotalInputTokens).
+func TestCompactionCheckCountsCachedPromptTokens(t *testing.T) {
+	resp := InferResponse{Usage: Usage{
+		InputTokens:              1_200,
+		CacheReadInputTokens:     170_000,
+		CacheCreationInputTokens: 20_000,
+	}}
+
+	const limit = 200_000
+	if NeedsCompaction(resp.InputTokens, limit) {
+		t.Fatal("precondition: uncached delta alone must look far below the threshold")
+	}
+	if !NeedsCompaction(resp.TotalInputTokens(), limit) {
+		t.Fatalf("NeedsCompaction(%d, %d) = false, want true", resp.TotalInputTokens(), limit)
 	}
 }
 
-func TestEstimatePromptTokensNeverDropsBelowLastKnownPromptSize(t *testing.T) {
-	got := estimatePromptTokens(1000, 3000, 2000)
-	if got != 1000 {
-		t.Fatalf("estimatePromptTokens() = %d, want 1000", got)
+// The provider's own count wins whenever it exists — the text estimate is a
+// fallback, never a correction.
+func TestPromptTokensOrEstimatePrefersMeasurement(t *testing.T) {
+	a := newAgentForPromptSizing(t)
+	a.SetMessages([]Message{UserMessage(strings.Repeat("x", 400_000), nil)})
+	a.lastTotalInputTokens = 12_345
+
+	if got := a.promptTokensOrEstimate(); got != 12_345 {
+		t.Fatalf("promptTokensOrEstimate() = %d, want the measured 12345", got)
+	}
+}
+
+// With no measured count the estimate stands in. It has to notice a rebuilt
+// agent seeded with a long history (session resume, model switch, toolset
+// drift), whose first prompt can already be over the threshold, without
+// tipping over on an ordinary short conversation.
+func TestPromptTokensOrEstimateFallsBackToEstimate(t *testing.T) {
+	const limit = 200_000
+	cases := []struct {
+		name           string
+		content        string
+		wantCompaction bool
+	}{
+		{"seeded history", strings.Repeat("x", 800_000), true},
+		{"fresh conversation", "fix the login bug", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a := newAgentForPromptSizing(t)
+			a.SetMessages([]Message{UserMessage(c.content, nil)})
+
+			got := a.promptTokensOrEstimate()
+			if got == 0 {
+				t.Fatal("promptTokensOrEstimate() = 0, want an estimate")
+			}
+			if NeedsCompaction(got, limit) != c.wantCompaction {
+				t.Fatalf("NeedsCompaction(%d, %d) = %v, want %v",
+					got, limit, !c.wantCompaction, c.wantCompaction)
+			}
+		})
+	}
+}
+
+func newAgentForPromptSizing(t *testing.T) *agent {
+	t.Helper()
+	ag := NewAgent(Config{
+		ID:     "test",
+		LLM:    newBlockingLLM(1),
+		System: NewSystem(),
+		Tools:  NewTools(),
+	})
+	go func() {
+		for range ag.Outbox() {
+		}
+	}()
+	return ag.(*agent)
+}
+
+// Compaction collapses the chain to a single summary, so the measurement taken
+// before it must not survive: it would still read "full" against the tiny new
+// chain and compact again on every following step. Zero suppresses the check
+// until the next inference reports a fresh figure.
+func TestApplyCompactionClearsLastTotalInputTokens(t *testing.T) {
+	a := newAgentForPromptSizing(t)
+	a.SetMessages([]Message{
+		UserMessage("first", nil),
+		{Role: RoleAssistant, Content: "reply"},
+		UserMessage("second", nil),
+	})
+	a.lastTotalInputTokens = 195_000
+
+	a.applyCompaction(context.Background(), "summary", 3, "manual")
+
+	if a.lastTotalInputTokens != 0 {
+		t.Fatalf("lastTotalInputTokens = %d, want 0 after compaction", a.lastTotalInputTokens)
 	}
 }
 
@@ -424,3 +508,22 @@ func TestCanExecuteToolBatchInParallelOnlyAllowsReadOnlyTools(t *testing.T) {
 		})
 	}
 }
+
+// The turn loop must recognize the tag the llm layer attaches, not the
+// provider wording behind it — that vocabulary lives in llmerr now.
+func TestIsPromptTooLongReadsTheContextExceededTag(t *testing.T) {
+	if !isPromptTooLong(fmt.Errorf("infer: %w", stubContextExceeded{})) {
+		t.Fatal("isPromptTooLong() = false for a tagged error, want true")
+	}
+	if isPromptTooLong(errors.New("prompt is too long: 213423 tokens > 200000")) {
+		t.Fatal("isPromptTooLong() = true for an untagged error; core must not match provider text")
+	}
+	if isPromptTooLong(nil) {
+		t.Fatal("isPromptTooLong(nil) = true, want false")
+	}
+}
+
+type stubContextExceeded struct{}
+
+func (stubContextExceeded) Error() string    { return "prompt too long" }
+func (stubContextExceeded) ContextExceeded() {}

@@ -193,6 +193,7 @@ func TestModelLimitsMemoized(t *testing.T) {
 // TestModelLimitsRetryAfterFailure ensures a transient resolution failure is not
 // cached as 0: the next query retries, and only a successful lookup is memoized.
 func TestModelLimitsRetryAfterFailure(t *testing.T) {
+	t.Setenv(InputLimitEnvVar, "")
 	mp := &mockLLMProvider{listErr: errors.New("network down")}
 	l := &Client{provider: mp, model: "m"}
 
@@ -218,6 +219,31 @@ func TestModelLimitsRetryAfterFailure(t *testing.T) {
 	}
 	if mp.listCalls != afterRecovery {
 		t.Errorf("ListModels called again after success (%d→%d), want cached", afterRecovery, mp.listCalls)
+	}
+}
+
+// The env override outranks the provider's own figure, for a provider that
+// under-reports its window.
+func TestInputLimitEnvOverrideBeatsProvider(t *testing.T) {
+	t.Setenv(InputLimitEnvVar, "272000")
+	mp := &mockLLMProvider{models: []ModelInfo{{ID: "m", InputTokenLimit: 200000}}}
+	l := &Client{provider: mp, model: "m"}
+
+	if got := l.InputLimit(); got != 272000 {
+		t.Fatalf("InputLimit() = %d, want the 272000 override", got)
+	}
+}
+
+// An undiscoverable window resolves to 0 rather than a guess: proactive
+// compaction then stays out of the way and the prompt-too-long retry recovers.
+// Acting on an invented number would silently compact a conversation that had
+// room, or never fire on one that did not.
+func TestInputLimitUnknownStaysZero(t *testing.T) {
+	t.Setenv(InputLimitEnvVar, "")
+	l := &Client{provider: &mockLLMProvider{models: []ModelInfo{{ID: "m"}}}, model: "m"}
+
+	if got := l.InputLimit(); got != 0 {
+		t.Fatalf("InputLimit() = %d, want 0 for an unknown window", got)
 	}
 }
 

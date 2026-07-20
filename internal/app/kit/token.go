@@ -55,29 +55,38 @@ func GetModelTokenLimits(store *llm.Store, currentModel *llm.CurrentModelInfo) (
 	return store.CachedModelLimits(currentModel.ModelID)
 }
 
-// getEffectiveTokenLimits returns custom limits if set, otherwise cached model limits.
-func getEffectiveTokenLimits(store *llm.Store, currentModel *llm.CurrentModelInfo) (inputLimit, outputLimit int) {
+// getEffectiveOutputLimit returns the output cap: a custom limit if set,
+// otherwise the cached model metadata. The input side has its own resolver
+// (llm.Store.EffectiveInputLimit) because it also honors an env override and
+// is shared with the agent's compaction check.
+func getEffectiveOutputLimit(store *llm.Store, currentModel *llm.CurrentModelInfo) int {
 	if currentModel == nil {
-		return 0, 0
+		return 0
 	}
 
 	if store != nil {
-		if input, output, ok := store.GetTokenLimit(currentModel.ModelID); ok {
-			return input, output
+		if _, output, ok := store.GetTokenLimit(currentModel.ModelID); ok {
+			return output
 		}
 	}
 
-	return GetModelTokenLimits(store, currentModel)
-}
-
-// GetEffectiveInputLimit returns only the effective input token limit.
-func GetEffectiveInputLimit(store *llm.Store, currentModel *llm.CurrentModelInfo) int {
-	input, _ := getEffectiveTokenLimits(store, currentModel)
-	return input
-}
-
-// getEffectiveOutputLimit returns only the effective output token limit.
-func getEffectiveOutputLimit(store *llm.Store, currentModel *llm.CurrentModelInfo) int {
-	_, output := getEffectiveTokenLimits(store, currentModel)
+	_, output := GetModelTokenLimits(store, currentModel)
 	return output
+}
+
+// GetEffectiveInputLimit returns the context window for the status bar's
+// percentage, or 0 when it is unknown (no model selected, or a model whose
+// window San cannot size) — the bar renders that as "--" rather than a
+// percentage of a guess.
+//
+// It delegates to llm.Store.EffectiveInputLimit, the same resolver
+// llm.Client.InputLimit uses for the auto-compaction trigger, so the bar can
+// never fill against a different window than the one compaction fires on
+// (issue #338).
+func GetEffectiveInputLimit(store *llm.Store, currentModel *llm.CurrentModelInfo) int {
+	if store == nil || currentModel == nil {
+		return 0
+	}
+	auth := store.ResolveAuthMethod(currentModel)
+	return store.EffectiveInputLimit(currentModel.Provider, auth, currentModel.ModelID)
 }
